@@ -160,11 +160,26 @@ public final class Recorder {
     state = State.SAVING;
     saver.execute(() -> {
       ClipWriter.Saved saved = ClipWriter.save(ring, ready.ffmpeg(), config.fps(), config.bufferSeconds(), clipsFolder);
+      if (saved.file() != null) {
+        ClipLibrary.thumbnail(saved.file(), ready.ffmpeg());
+      }
       if (state == State.SAVING) {
         state = before;
       }
       done.accept(saved);
     });
+  }
+
+  /**
+   * Makes the thumbnail of {@code clip} in the background if it is missing. Runs on the same thread
+   * as saving, so only one ffmpeg works at a time. Completes with null when there is no thumbnail.
+   */
+  public CompletableFuture<Path> thumbnail(Path clip) {
+    EncoderProbe.Result ready = probe;
+    if (ready == null || ready.ffmpeg() == null) {
+      return CompletableFuture.completedFuture(null);
+    }
+    return CompletableFuture.supplyAsync(() -> ClipLibrary.thumbnail(clip, ready.ffmpeg()), saver);
   }
 
   /** Pauses or resumes recording; resuming starts a fresh buffer. Returns true when now paused. */

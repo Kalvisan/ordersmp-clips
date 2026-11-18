@@ -1,14 +1,21 @@
 package lv.ordersmp.clips.ui;
 
 import com.mojang.blaze3d.Blaze3D;
+import com.mojang.blaze3d.platform.NativeImage;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import lv.ordersmp.clips.ClipLibrary;
 import lv.ordersmp.clips.ClipsClient;
 import lv.ordersmp.clips.Recorder;
@@ -25,9 +32,11 @@ import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.util.Util;
 
 /**
  * The Clips screen, opened from the pause menu or its key. It follows the vanilla world list:
@@ -40,10 +49,15 @@ public final class ClipsScreen extends Screen {
   private static final Identifier FOLDER = sprite("icon/folder");
   private static final Identifier TRASH = sprite("icon/trash");
   private static final Identifier CLIP = sprite("pause_menu/clips");
+  private static final Identifier REC = sprite("icon/rec");
+  private static final Identifier REC_OFF = sprite("icon/rec_off");
   private static final int WHITE = 0xFFFFFFFF;
   private static final int GRAY = 0xFFA0A0A0;
   private static final int DARK_GRAY = 0xFF808080;
   private static final int RED = 0xFFFF5555;
+  private static final int BLACK = 0xFF000000;
+  private static final int THUMB_WIDTH = 56;
+  private static final int THUMB_HEIGHT = 32;
   private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm", Locale.ROOT);
   private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("d MMM", Locale.ENGLISH);
 
@@ -56,10 +70,13 @@ public final class ClipsScreen extends Screen {
   private StringWidget titleWidget;
   private Button watchButton;
   private Button deleteButton;
-  private Button pauseButton;
+  private boolean toggleShowsPaused;
   private Component status = Component.empty();
   private int statusColor = GRAY;
   private Component summary = Component.empty();
+  private final Map<Path, Identifier> thumbnails = new HashMap<>();
+  private final Set<Path> requested = new HashSet<>();
+  private int generation;
 
   public ClipsScreen(Screen parent, Recorder recorder, Component saveKey) {
     super(Component.translatable("ordersmp-clips.screen.title"));
@@ -86,12 +103,12 @@ public final class ClipsScreen extends Screen {
     LinearLayout top = footer.addChild(LinearLayout.horizontal().spacing(8));
     watchButton = top.addChild(iconButton("ordersmp-clips.screen.watch", PLAY, 150, button -> watchSelected()));
     top.addChild(iconButton("ordersmp-clips.screen.folder", FOLDER, 150, button -> openFolder()));
-    LinearLayout bottom = footer.addChild(LinearLayout.horizontal().spacing(4));
-    deleteButton = bottom.addChild(iconButton("ordersmp-clips.screen.delete", TRASH, 100, button -> confirmDelete()));
-    pauseButton = bottom.addChild(Button.builder(pauseLabel(), button -> recorder.togglePause()).width(100).build());
-    bottom.addChild(Button.builder(CommonComponents.GUI_DONE, button -> onClose()).width(100).build());
+    LinearLayout bottom = footer.addChild(LinearLayout.horizontal().spacing(8));
+    deleteButton = bottom.addChild(iconButton("ordersmp-clips.screen.delete", TRASH, 150, button -> confirmDelete()));
+    bottom.addChild(Button.builder(CommonComponents.GUI_DONE, button -> onClose()).width(150).build());
 
     layout.visitWidgets(this::addRenderableWidget);
+    addRenderableWidget(recordToggle());
     repositionElements();
     list.fill();
     refresh();
@@ -118,6 +135,15 @@ public final class ClipsScreen extends Screen {
   }
 
   @Override
+  public void removed() {
+    generation++;
+    thumbnails.values().forEach(id -> minecraft.getTextureManager().release(id));
+    thumbnails.clear();
+    requested.clear();
+    super.removed();
+  }
+
+  @Override
   public void onClose() {
     minecraft.gui.setScreen(parent);
   }
@@ -138,8 +164,10 @@ public final class ClipsScreen extends Screen {
     if (watchButton != null) {
       watchButton.active = selected;
       deleteButton.active = selected;
-      pauseButton.setMessage(pauseLabel());
-      pauseButton.active = recorder.state() != Recorder.State.PROBLEM && recorder.state() != Recorder.State.STARTING;
+    }
+    if (watchButton != null && toggleShowsPaused != (recorder.state() == Recorder.State.PAUSED)) {
+      rebuildWidgets();
+      return;
     }
     statusColor = GRAY;
     status = switch (recorder.state()) {
@@ -154,9 +182,24 @@ public final class ClipsScreen extends Screen {
     };
   }
 
-  private Component pauseLabel() {
-    return Component.translatable(recorder.state() == Recorder.State.PAUSED
-        ? "ordersmp-clips.screen.resume" : "ordersmp-clips.screen.pause");
+  /**
+   * The record switch in the top left corner: a red dot while recording, a hollow dot while paused.
+   * Its look follows the recorder, so pausing with the key updates it too.
+   */
+  private SpriteIconButton recordToggle() {
+    toggleShowsPaused = recorder.state() == Recorder.State.PAUSED;
+    String key = toggleShowsPaused ? "ordersmp-clips.screen.resume" : "ordersmp-clips.screen.pause";
+    SpriteIconButton toggle = SpriteIconButton.builder(Component.translatable(key), button -> {
+          recorder.togglePause();
+          rebuildWidgets();
+        }, true)
+        .width(20)
+        .sprite(toggleShowsPaused ? REC_OFF : REC, 12, 12)
+        .withTootip()
+        .build();
+    toggle.setPosition(8, 8);
+    toggle.active = recorder.state() != Recorder.State.PROBLEM && recorder.state() != Recorder.State.STARTING;
+    return toggle;
   }
 
   private void watchSelected() {
@@ -200,6 +243,30 @@ public final class ClipsScreen extends Screen {
       ClipsClient.log().warn("Could not delete {}", clip.file().getFileName(), e);
     }
     reload();
+  }
+
+  /** Asks for the clip's thumbnail once; it is made in the background and shown when ready. */
+  private void requestThumbnail(Path clip) {
+    if (!requested.add(clip)) {
+      return;
+    }
+    int requestedIn = generation;
+    recorder.thumbnail(clip).thenAccept(file -> minecraft.execute(() -> uploadThumbnail(clip, file, requestedIn)));
+  }
+
+  private void uploadThumbnail(Path clip, Path file, int requestedIn) {
+    if (file == null || requestedIn != generation) {
+      return;
+    }
+    Identifier id = Identifier.fromNamespaceAndPath(ClipsClient.MOD_ID,
+        "thumbnails/" + Util.sanitizeName(file.getFileName().toString().toLowerCase(Locale.ROOT), Identifier::validPathChar));
+    try (InputStream in = Files.newInputStream(file)) {
+      NativeImage image = NativeImage.read(in);
+      minecraft.getTextureManager().register(id, new DynamicTexture(() -> "Clip thumbnail " + id, image));
+      thumbnails.put(clip, id);
+    } catch (IOException e) {
+      ClipsClient.log().warn("Could not load the thumbnail {}", file.getFileName(), e);
+    }
   }
 
   private static SpriteIconButton iconButton(String key, Identifier icon, int width, Button.OnPress onPress) {
@@ -247,11 +314,12 @@ public final class ClipsScreen extends Screen {
 
     private void fill() {
       replaceEntries(clips.stream().map(ClipEntry::new).toList());
+      clips.forEach(clip -> requestThumbnail(clip.file()));
     }
 
     @Override
     public int getRowWidth() {
-      return 270;
+      return 308;
     }
 
     @Override
@@ -286,9 +354,20 @@ public final class ClipsScreen extends Screen {
 
     @Override
     public void extractContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY, boolean hovered, float a) {
-      int iconX = getContentX() + 8;
-      graphics.blitSprite(RenderPipelines.GUI_TEXTURED, CLIP, iconX, getContentYMiddle() - 7, 15, 15);
-      int textX = getContentX() + 32 + 3;
+      int x = getContentX();
+      int y = getContentY();
+      Identifier thumbnail = thumbnails.get(clip.file());
+      if (thumbnail == null) {
+        graphics.fill(x, y, x + THUMB_WIDTH, y + THUMB_HEIGHT, BLACK);
+        graphics.blitSprite(RenderPipelines.GUI_TEXTURED, CLIP, x + (THUMB_WIDTH - 15) / 2, y + (THUMB_HEIGHT - 15) / 2, 15, 15);
+      } else {
+        graphics.blit(RenderPipelines.GUI_TEXTURED, thumbnail, x, y, 0, 0, THUMB_WIDTH, THUMB_HEIGHT,
+            ClipLibrary.THUMBNAIL_WIDTH, ClipLibrary.THUMBNAIL_HEIGHT, ClipLibrary.THUMBNAIL_WIDTH, ClipLibrary.THUMBNAIL_HEIGHT);
+      }
+      if (hovered) {
+        graphics.blitSprite(RenderPipelines.GUI_TEXTURED, PLAY, x + (THUMB_WIDTH - 12) / 2, y + (THUMB_HEIGHT - 12) / 2, 12, 12);
+      }
+      int textX = x + THUMB_WIDTH + 4;
       graphics.text(font, name, textX, getContentY() + 1, WHITE);
       graphics.text(font, details, textX, getContentY() + 9 + 3, DARK_GRAY);
     }

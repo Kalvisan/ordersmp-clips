@@ -6,11 +6,13 @@ import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 /**
@@ -30,7 +32,13 @@ public final class ClipLibrary {
    */
   public record Clip(Path file, Instant saved, long bytes, int seconds) {}
 
+  /** Thumbnail size in pixels: twice the 56x32 it is drawn at, so it stays sharp at GUI scale 2. */
+  public static final int THUMBNAIL_WIDTH = 112;
+  public static final int THUMBNAIL_HEIGHT = 64;
+
   private static final int BOX_HEADER = 8;
+  private static final int THUMBNAIL_TIMEOUT_SECONDS = 15;
+  private static final String THUMBNAIL_FOLDER = ".thumbnails";
 
   private ClipLibrary() {}
 
@@ -49,9 +57,59 @@ public final class ClipLibrary {
     return clips;
   }
 
-  /** Deletes one clip from disk. */
+  /** Deletes one clip and its thumbnail from disk. */
   public static void delete(Clip clip) throws IOException {
     Files.deleteIfExists(clip.file());
+    Files.deleteIfExists(thumbnailFile(clip.file()));
+  }
+
+  /** Where the thumbnail of {@code clip} is kept: a hidden folder beside the clips. */
+  public static Path thumbnailFile(Path clip) {
+    String name = clip.getFileName().toString();
+    return clip.resolveSibling(THUMBNAIL_FOLDER).resolve(name.substring(0, name.length() - ".mp4".length()) + ".png");
+  }
+
+  /**
+   * Makes the thumbnail of {@code clip} with ffmpeg if it does not exist yet, from a frame three
+   * seconds before the end, where the saved moment usually is. Returns the file, or null when it
+   * could not be made. Blocks while ffmpeg runs, so call it off the render thread.
+   */
+  public static Path thumbnail(Path clip, String ffmpeg) {
+    Path target = thumbnailFile(clip);
+    if (Files.isRegularFile(target)) {
+      return target;
+    }
+    Path partial = target.resolveSibling(target.getFileName() + ".part.png");
+    try {
+      Files.createDirectories(target.getParent());
+      String size = THUMBNAIL_WIDTH + ":" + THUMBNAIL_HEIGHT;
+      Process process = new ProcessBuilder(List.of(
+          ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+          "-sseof", "-3", "-i", clip.toString(), "-frames:v", "1",
+          "-vf", "scale=" + size + ":force_original_aspect_ratio=decrease,pad=" + size + ":(ow-iw)/2:(oh-ih)/2",
+          partial.toString()))
+          .redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start();
+      if (!process.waitFor(THUMBNAIL_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+        process.destroyForcibly();
+        return null;
+      }
+      if (process.exitValue() != 0 || !Files.isRegularFile(partial)) {
+        return null;
+      }
+      Files.move(partial, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+      return target;
+    } catch (IOException e) {
+      return null;
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      return null;
+    } finally {
+      try {
+        Files.deleteIfExists(partial);
+      } catch (IOException ignored) {
+        partial.toFile().deleteOnExit();
+      }
+    }
   }
 
   private static boolean isClip(Path file) {

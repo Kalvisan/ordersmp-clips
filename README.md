@@ -68,9 +68,11 @@ Clips are saved to `<instance>/clips/` and named by date and time, for example
 ### The Clips screen
 
 Press **J**, or **Esc** and the camera icon next to the other icons in the game menu. The screen
-shows whether recording is on and lists your clips, newest first, with their length and size.
-Select a clip to watch it in your video player (or double-click it), open the clips folder, or
-delete it. Recording can be paused and resumed here too.
+shows whether recording is on and lists your clips, newest first, with a thumbnail, their length
+and size. Select a clip to watch it in your video player (or double-click it), open the clips
+folder, or delete it. The dot in the top left corner pauses and resumes recording.
+
+Thumbnails are made by FFmpeg and kept in `<instance>/clips/.thumbnails/`.
 
 ### The recording mark
 
@@ -131,7 +133,7 @@ Memory use is roughly bitrate times buffer length: 2 minutes at 10 Mbps is about
 
 - Automatic clips on kills and deaths, trimmed from the first hit
 - Simple Voice Chat voices as separate tracks with a volume per player
-- A basic in-game editor (trim, cut, volumes) and clip thumbnails
+- A basic in-game editor (trim, cut, volumes)
 - Optional upload to OrderSMP Studio
 - Builds for each new Minecraft release
 
