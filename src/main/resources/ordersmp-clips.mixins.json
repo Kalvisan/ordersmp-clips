@@ -2,7 +2,7 @@
   "required": true,
   "package": "lv.ordersmp.clips.mixin",
   "compatibilityLevel": "JAVA_25",
-  "client": ["ClientPacketListenerMixin", "MinecraftMixin", "PauseScreenMixin"],
+  "client": ["ClientPacketListenerMixin", "GameRendererAccessor", "MinecraftMixin", "PauseScreenMixin"],
   "injectors": {
     "defaultRequire": 1
   }

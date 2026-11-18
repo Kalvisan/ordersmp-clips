@@ -56,7 +56,7 @@ public final class ClipLibrary {
     List<Clip> clips = new ArrayList<>();
     try (Stream<Path> files = Files.list(folder)) {
       for (Path file : files.filter(ClipLibrary::isClip).toList()) {
-        clips.add(new Clip(file, Files.getLastModifiedTime(file).toInstant(), Files.size(file), seconds(file)));
+        clips.add(new Clip(file, Files.getLastModifiedTime(file).toInstant(), Files.size(file), length(file)));
       }
     }
     clips.sort(Comparator.comparing(Clip::saved).reversed());
@@ -172,7 +172,7 @@ public final class ClipLibrary {
    * Reads the length from the MP4 movie header. Clips are written with the header at the front, so
    * this reads a few dozen bytes instead of the whole file; other MP4s are skipped box by box.
    */
-  private static double seconds(Path file) {
+  public static double length(Path file) {
     try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ)) {
       long moov = findBox(channel, 0, channel.size(), "moov");
       if (moov < 0) {

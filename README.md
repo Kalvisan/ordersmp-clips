@@ -10,8 +10,10 @@ almost nothing in FPS. It works in singleplayer and on any server.
 ## Features
 
 - **Kills and deaths save themselves.** When you kill a player or die in a fight, the clip runs
-  from 5 seconds before the first hit to 4 seconds after the kill. Kills close together become one
-  clip, and the list shows them as `Kill - Name` or `Death - Name`.
+  from 5 seconds before the first hit to 4 seconds after the last action. A fight against several
+  players stays one clip for as long as the fighting goes on. Up to 10 extra seconds before and
+  after are kept, and the editor opens trimmed to the fight, so you can widen it if it was cut too
+  tightly. The list shows them as `Kill - Name` or `Death - Name`.
 
 - **Always ready.** The last 2 minutes (adjustable) are kept in memory. Press **F8** and they are
   saved as an MP4 in your `clips` folder.
@@ -126,9 +128,13 @@ Thumbnails, timeline strips and edits are kept in hidden `.thumbnails` and `.edi
 
 ### The recording mark
 
+The mark is drawn after each frame is captured, so you see it but your clips never show it.
+
 | Mark | Meaning |
 |---|---|
 | Film strip, `CLIP` | Clipping; the last minutes are ready to save |
+| Crossed swords, `Fight 0:12` | A fight is being followed for an automatic clip |
+| Red skull, `Kill x1` | A kill happened; the clip saves when the fighting stops |
 | Red dot, `REC 12:34` | Recording mode is writing everything to disk |
 | Yellow, `Saving` | A clip is being written |
 | Gray outline, `Paused` | Paused with F9 |
@@ -180,8 +186,6 @@ Memory use is roughly bitrate times buffer length: 2 minutes at 10 Mbps is about
 
 ## Known limitations
 
-- The `REC` mark is part of the HUD, so it appears in your clips. Hide it with `"showHud": false`
-  until clips are captured before the HUD overlays.
 - Tested so far on Windows with an NVIDIA graphics card on the OpenGL renderer. AMD, Intel, macOS,
   Linux, the Vulkan renderer and shader packs are not tested yet; reports are welcome.
 - Clips have no sound yet.

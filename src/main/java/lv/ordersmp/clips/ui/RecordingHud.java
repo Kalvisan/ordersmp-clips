@@ -4,8 +4,7 @@ import java.util.List;
 import java.util.Locale;
 import lv.ordersmp.clips.ClipsClient;
 import lv.ordersmp.clips.Recorder;
-import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
-import net.minecraft.client.DeltaTracker;
+import lv.ordersmp.clips.fight.FightTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -18,9 +17,11 @@ import net.minecraft.resources.Identifier;
  * mark changes shape as well as colour (film strip while clipping, filled dot while recording
  * everything, hollow dot when paused), so its state does not depend on colour alone.
  */
-public final class RecordingHud implements HudElement {
+public final class RecordingHud {
 
   private static final Identifier CLIP_ICON = Identifier.fromNamespaceAndPath(ClipsClient.MOD_ID, "hud/clip");
+  private static final Identifier FIGHT_ICON = Identifier.fromNamespaceAndPath(ClipsClient.MOD_ID, "hud/fight");
+  private static final Identifier KILL_ICON = Identifier.fromNamespaceAndPath(ClipsClient.MOD_ID, "hud/kill");
   private static final int CLIP_ICON_SIZE = 9;
 
   private static final int BACKGROUND = 0x80000000;
@@ -43,8 +44,8 @@ public final class RecordingHud implements HudElement {
     showStats = !showStats;
   }
 
-  @Override
-  public void extractRenderState(GuiGraphicsExtractor graphics, DeltaTracker delta) {
+  /** Draws the mark and, when turned on, the stats into {@code graphics}. */
+  public void draw(GuiGraphicsExtractor graphics) {
     Font font = Minecraft.getInstance().font;
     int bottom = 4;
     if (visible) {
@@ -72,16 +73,45 @@ public final class RecordingHud implements HudElement {
       case PAUSED, STARTING -> GRAY;
     };
     boolean clipping = state == Recorder.State.RECORDING && !recorder.isRecordingSession();
+    Component fight = clipping ? fightInfo() : null;
+    if (fight != null) {
+      label = fight;
+    }
     int iconWidth = clipping ? CLIP_ICON_SIZE : 5;
     int width = 4 + iconWidth + 3 + font.width(label) + 4;
     graphics.fill(4, 4, 4 + width, 17, BACKGROUND);
     if (clipping) {
-      graphics.blitSprite(RenderPipelines.GUI_TEXTURED, CLIP_ICON, 8, 6, CLIP_ICON_SIZE, CLIP_ICON_SIZE);
+      graphics.blitSprite(RenderPipelines.GUI_TEXTURED, clipIcon(), 8, 6, CLIP_ICON_SIZE, CLIP_ICON_SIZE);
     } else {
       drawDot(graphics, 8, 8, state, color);
     }
-    graphics.text(font, label, 8 + iconWidth + 3, 6, state == Recorder.State.RECORDING ? WHITE : color);
+    graphics.text(font, label, 8 + iconWidth + 3, 6, fight != null ? YELLOW : state == Recorder.State.RECORDING ? WHITE : color);
     return 17;
+  }
+
+  /** The clipping icon for what is happening: film strip, crossed swords in a fight, skull after a kill. */
+  private static Identifier clipIcon() {
+    FightTracker fights = ClipsClient.fights();
+    if (fights == null || fights.fightSeconds() < 0) {
+      return CLIP_ICON;
+    }
+    return fights.kills() > 0 ? KILL_ICON : FIGHT_ICON;
+  }
+
+  /** While a fight is being followed: how long it has run, or that a kill is waiting to be saved. */
+  private static Component fightInfo() {
+    FightTracker fights = ClipsClient.fights();
+    if (fights == null) {
+      return null;
+    }
+    int seconds = fights.fightSeconds();
+    if (seconds < 0) {
+      return null;
+    }
+    if (fights.kills() > 0) {
+      return Component.translatable("ordersmp-clips.hud.kill", fights.kills());
+    }
+    return Component.translatable("ordersmp-clips.hud.fight", ClipsScreen.duration(seconds));
   }
 
   private static void drawDot(GuiGraphicsExtractor graphics, int x, int y, Recorder.State state, int color) {

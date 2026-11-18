@@ -29,6 +29,7 @@ import net.minecraft.client.gui.components.tabs.MenuTabBar;
 import net.minecraft.client.gui.components.tabs.TabManager;
 import net.minecraft.client.gui.components.tabs.TabNavigationBar;
 import net.minecraft.client.gui.layouts.GridLayout;
+import net.minecraft.client.gui.layouts.LinearLayout;
 import net.minecraft.client.gui.navigation.ScreenRectangle;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
@@ -292,16 +293,14 @@ public final class EditorScreen extends Screen {
     EditorTab tab = new EditorTab(Component.translatable("ordersmp-clips.editor.tab.send"));
     GridLayout.RowHelper rows = tab.rows(1);
     uploadButton = rows.addChild(textAndIcon("ordersmp-clips.editor.studio", UPLOAD, controlWidth, button -> uploadPressed()));
-    accountLine = rows.addChild(new MultiLineTextWidget(Component.empty(), font).setMaxWidth(controlWidth));
+    LinearLayout account = rows.addChild(LinearLayout.horizontal().spacing(4));
+    accountLine = account.addChild(new MultiLineTextWidget(Component.empty(), font).setMaxWidth(controlWidth - 24));
+    unlinkButton = account.addChild(iconOnly("ordersmp-clips.editor.unlink", CROSS, button -> confirmUnlink()));
     exportButton = rows.addChild(Button.builder(Component.translatable("ordersmp-clips.editor.export"), button -> export())
         .width(controlWidth)
         .tooltip(Tooltip.create(Component.translatable("ordersmp-clips.editor.export.tooltip")))
         .build());
     rows.addChild(new MultiLineTextWidget(Component.translatable("ordersmp-clips.editor.send.note"), font).setMaxWidth(controlWidth));
-    unlinkButton = rows.addChild(Button.builder(Component.translatable("ordersmp-clips.editor.unlink"), button -> {
-      ClipsClient.studio().unlink();
-      refreshControls();
-    }).width(controlWidth).build());
     return tab;
   }
 
@@ -454,6 +453,18 @@ public final class EditorScreen extends Screen {
             .withStyle(ChatFormatting.RED));
       }
     }
+  }
+
+  /** Unlinking stops every upload until the player links again, so it asks first. */
+  private void confirmUnlink() {
+    minecraft.gui.setScreen(new ConfirmScreen(unlink -> {
+      if (unlink) {
+        ClipsClient.studio().unlink();
+      }
+      minecraft.gui.setScreen(this);
+    }, Component.translatable("ordersmp-clips.editor.unlink.title"),
+        Component.translatable("ordersmp-clips.editor.unlink.body"),
+        Component.translatable("ordersmp-clips.editor.unlink.confirm"), CommonComponents.GUI_CANCEL));
   }
 
   private void uploadPressed() {

@@ -106,5 +106,10 @@
   "ordersmp-clips.toast.kill": "Kill on record",
   "ordersmp-clips.toast.kills": "%s kills on record",
   "ordersmp-clips.toast.death": "Death on record",
-  "ordersmp-clips.toast.moment.body": "%s, %s"
+  "ordersmp-clips.toast.moment.body": "%s, %s",
+  "ordersmp-clips.hud.fight": "Fight %s",
+  "ordersmp-clips.hud.kill": "Kill x%s",
+  "ordersmp-clips.editor.unlink.title": "Unlink Studio?",
+  "ordersmp-clips.editor.unlink.body": "Clips stop uploading until you link this PC again. Clips already in Studio stay there.",
+  "ordersmp-clips.editor.unlink.confirm": "Unlink"
 }

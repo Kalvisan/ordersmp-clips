@@ -9,8 +9,9 @@ import java.util.function.LongSupplier;
  * Finds fights from what the client sees, so automatic clips work on any server: a fight starts
  * with the first hit between the player and another player (bow shots count, since the shooter
  * is named as the cause), a player the player hit dies within a few seconds (a kill), or the
- * player dies during the fight (a death). The clip runs from the first hit minus a lead-in to the
- * last kill or death plus a follow-up, and kills close together become one clip.
+ * player dies during the fight (a death). Fights against several players at once stay one fight
+ * for as long as hits keep coming; it is saved once the fighting stops, from the first hit minus a
+ * lead-in to the last hit or kill plus a follow-up.
  */
 public final class FightTracker {
 
@@ -36,6 +37,7 @@ public final class FightTracker {
   private static final long FIGHT_ENDS = 10 * SECOND;
   private static final long KILL_CREDIT = 10 * SECOND;
   private static final long MERGE_KILLS = 15 * SECOND;
+  private static final long DEATH_TAIL = 10 * SECOND;
   private static final int MIN_SECONDS = 10;
   private static final int MAX_SECONDS = 300;
 
@@ -65,6 +67,16 @@ public final class FightTracker {
   public void configure(boolean kills, boolean deaths) {
     this.killsOn = kills;
     this.deathsOn = deaths;
+  }
+
+  /** Seconds since the fight began, or -1 when no fight is being followed. */
+  public int fightSeconds() {
+    return fightStart == 0 ? -1 : (int) ((clock.getAsLong() - fightStart) / SECOND);
+  }
+
+  /** Kills in the current fight so far. */
+  public int kills() {
+    return kills;
   }
 
   /** The player hit another player, or the other player hit the player. */
@@ -117,11 +129,10 @@ public final class FightTracker {
       return;
     }
     long now = clock.getAsLong();
-    long wait = died ? FOLLOW_UP : MERGE_KILLS;
-    if (now - lastMoment < wait) {
+    if (died ? now - lastMoment < FOLLOW_UP + DEATH_TAIL : now - lastMoment < MERGE_KILLS || now - lastHit < FIGHT_ENDS) {
       return;
     }
-    long end = lastMoment + FOLLOW_UP;
+    long end = (died ? lastMoment : Math.max(lastMoment, lastHit)) + FOLLOW_UP;
     long start = fightStart - LEAD_IN;
     int seconds = (int) Math.max(MIN_SECONDS, Math.min(MAX_SECONDS, (end - start + SECOND - 1) / SECOND));
     int skip = (int) Math.max(0, (now - end) / SECOND);
