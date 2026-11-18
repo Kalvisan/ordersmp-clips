@@ -152,8 +152,8 @@ The mark is drawn after each frame is captured, so you see it but your clips nev
 
 Every clip gets the game's sound. Clips logs which sounds played, where and how loud, and mixes the
 clip's sound when it is saved, from the same sound files, with distance and left and right like in
-the game. Nothing extra runs while you play. Your sound category sliders count (music, players and so
-on), the master slider does not, so turning the game down never makes clips quieter. The mixed
+the game. Nothing extra runs while you play. The game's volume and a clip's volume are separate:
+your sound sliders never change a clip, and clip volumes never change the game. The mixed
 track is kept beside the clip in `.audio/` as a lossless file, and a mix is inside the MP4.
 
 With [Simple Voice Chat](https://modrinth.com/plugin/simple-voice-chat) installed, your voice and
@@ -218,8 +218,8 @@ Memory use is roughly bitrate times buffer length: 2 minutes at 10 Mbps is about
   Linux, the Vulkan renderer and shader packs are not tested yet; reports are welcome.
 - Game sound is mixed from the sounds the game played, not recorded from your speakers, so it is
   close to what you heard but not identical: reverb and occlusion mods and sounds other mods play
-  on their own are not in it. With the master volume at 0 the game plays no sounds, so clips are
-  silent too.
+  on their own are not in it. A sound the game does not play, because its slider or the master
+  volume is at 0, is not in the clip either.
 
 ## Roadmap
 
