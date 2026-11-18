@@ -52,7 +52,7 @@ public final class EditorScreen extends Screen {
   private static final Identifier CUT = icon("cut");
   private static final Identifier TRASH = icon("trash");
   private static final Identifier CROSS = icon("cross");
-  private static final Identifier SEND = icon("send");
+  private static final Identifier UPLOAD = icon("upload");
   private static final int MARGIN = 8;
   private static final int TOP = 20;
   private static final int RIGHT_MIN = 208;
@@ -280,7 +280,7 @@ public final class EditorScreen extends Screen {
   private GridLayoutTab sendTab(int controlWidth) {
     EditorTab tab = new EditorTab(Component.translatable("ordersmp-clips.editor.tab.send"));
     GridLayout.RowHelper rows = tab.rows(1);
-    Button studio = rows.addChild(textAndIcon("ordersmp-clips.editor.studio", SEND, controlWidth, button -> {}));
+    Button studio = rows.addChild(textAndIcon("ordersmp-clips.editor.studio", UPLOAD, controlWidth, button -> {}));
     studio.active = false;
     studio.setTooltip(Tooltip.create(Component.translatable("ordersmp-clips.editor.studio.later")));
     exportButton = rows.addChild(Button.builder(Component.translatable("ordersmp-clips.editor.export"), button -> export())

@@ -83,7 +83,7 @@ The editor plays the clip in game and keeps editing to the basics:
 - **Cut Here** puts a cut at the playhead; **Remove Part** leaves out the part between two cuts
   (striped on the timeline) and **Keep Part** brings it back. **Reset All** undoes everything.
 - **Done** keeps your edits next to the clip; the video file itself is never changed.
-- **Save as New Clip** (Send tab) writes only the kept parts to a new MP4 next to the original.
+- **Save as New Clip** (Upload tab) writes only the kept parts to a new MP4 next to the original.
   The video is copied, not re-encoded, so it takes a moment and keeps full quality. Because of
   that, a start point snaps back to the whole second before it.
 
@@ -151,7 +151,7 @@ Memory use is roughly bitrate times buffer length: 2 minutes at 10 Mbps is about
 - Simple Voice Chat voices as separate tracks with a volume per player
 - Sound in the editor: game sound and voice volumes per player
 - Recording mode: film a whole session to disk instead of keeping the last minutes
-- Optional upload to OrderSMP Studio
+- Upload to OrderSMP Studio with live progress and a button that opens the clip in Studio
 - Builds for each new Minecraft release
 
 ## Building from source
