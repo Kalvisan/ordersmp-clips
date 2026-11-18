@@ -57,12 +57,20 @@ back to a software encoder, which uses more CPU.
 |---|---|
 | **F8** | Save the last minutes as a clip |
 | **F9** | Pause or resume recording |
+| **J** | Open the Clips screen |
 | *(unbound)* | Show recording stats |
 
 Keys can be changed in **Options > Controls > Key Binds > OrderSMP Clips**.
 
 Clips are saved to `<instance>/clips/` and named by date and time, for example
 `2026-11-18_21-14-03.mp4`.
+
+### The Clips screen
+
+Press **J**, or **Esc** and the camera icon next to the other icons in the game menu. The screen
+shows whether recording is on and lists your clips, newest first, with their length and size.
+Select a clip to watch it in your video player (or double-click it), open the clips folder, or
+delete it. Recording can be paused and resumed here too.
 
 ### The recording mark
 
@@ -123,7 +131,7 @@ Memory use is roughly bitrate times buffer length: 2 minutes at 10 Mbps is about
 
 - Automatic clips on kills and deaths, trimmed from the first hit
 - Simple Voice Chat voices as separate tracks with a volume per player
-- An in-game clip list and basic editor (trim, cut, volumes)
+- A basic in-game editor (trim, cut, volumes) and clip thumbnails
 - Optional upload to OrderSMP Studio
 - Builds for each new Minecraft release
 

@@ -97,6 +97,16 @@ public final class Recorder {
     return state;
   }
 
+  /** Where clips are saved. */
+  public Path clipsFolder() {
+    return clipsFolder;
+  }
+
+  /** How many seconds of play a saved clip holds at most. */
+  public int bufferSeconds() {
+    return config.bufferSeconds();
+  }
+
   /** Why recording is off, or null. */
   public String problem() {
     return problem;

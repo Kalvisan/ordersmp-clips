@@ -3,6 +3,7 @@ package lv.ordersmp.clips;
 import com.mojang.blaze3d.platform.InputConstants;
 import java.nio.file.Path;
 import lv.ordersmp.clips.encode.ClipWriter;
+import lv.ordersmp.clips.ui.ClipsScreen;
 import lv.ordersmp.clips.ui.RecordingHud;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
@@ -13,6 +14,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.toasts.SystemToast;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import org.slf4j.Logger;
@@ -28,10 +30,24 @@ public final class ClipsClient implements ClientModInitializer {
   private static final Logger LOG = LoggerFactory.getLogger("OrderSMP Clips");
   private static final SystemToast.SystemToastId TOAST = new SystemToast.SystemToastId(4000L);
   private static Recorder recorder;
+  private static KeyMapping saveMapping;
 
   /** The running recorder, or null before the game finished starting. */
   public static Recorder recorder() {
     return recorder;
+  }
+
+  /** The mod's logger, shared so every message is tagged the same way. */
+  public static Logger log() {
+    return LOG;
+  }
+
+  /** Opens the Clips screen on top of {@code parent}; does nothing before the game finished starting. */
+  public static void openScreen(Screen parent) {
+    if (recorder == null || saveMapping == null) {
+      return;
+    }
+    Minecraft.getInstance().gui.setScreen(new ClipsScreen(parent, recorder, saveMapping.getTranslatedKeyMessage()));
   }
 
   @Override
@@ -46,6 +62,9 @@ public final class ClipsClient implements ClientModInitializer {
         new KeyMapping("key." + MOD_ID + ".save", InputConstants.Type.KEYBOARD, InputConstants.KEY_F8, category));
     KeyMapping toggle = KeyMappingHelper.registerKeyMapping(
         new KeyMapping("key." + MOD_ID + ".toggle", InputConstants.Type.KEYBOARD, InputConstants.KEY_F9, category));
+    KeyMapping open = KeyMappingHelper.registerKeyMapping(
+        new KeyMapping("key." + MOD_ID + ".open", InputConstants.Type.KEYBOARD, InputConstants.KEY_J, category));
+    saveMapping = save;
     KeyMapping stats = KeyMappingHelper.registerKeyMapping(
         new KeyMapping("key." + MOD_ID + ".stats", InputConstants.Type.KEYBOARD, InputConstants.UNKNOWN.getValue(), category));
 
@@ -68,6 +87,7 @@ public final class ClipsClient implements ClientModInitializer {
     PressDetector saveKey = new PressDetector(save);
     PressDetector toggleKey = new PressDetector(toggle);
     PressDetector statsKey = new PressDetector(stats);
+    PressDetector openKey = new PressDetector(open);
     ClientTickEvents.END_CLIENT_TICK.register(client -> {
       if (saveKey.pressed()) {
         created.saveClip(saved -> client.execute(() -> announce(client, saved)));
@@ -78,6 +98,9 @@ public final class ClipsClient implements ClientModInitializer {
       }
       if (statsKey.pressed()) {
         hud.toggleStats();
+      }
+      if (openKey.pressed() && client.gui.screen() == null) {
+        openScreen(null);
       }
     });
   }
