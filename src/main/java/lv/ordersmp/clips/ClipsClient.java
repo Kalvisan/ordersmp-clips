@@ -3,6 +3,7 @@ package lv.ordersmp.clips;
 import com.mojang.blaze3d.platform.InputConstants;
 import java.nio.file.Path;
 import lv.ordersmp.clips.encode.ClipWriter;
+import lv.ordersmp.clips.studio.Studio;
 import lv.ordersmp.clips.ui.ClipsScreen;
 import lv.ordersmp.clips.ui.RecordingHud;
 import net.fabricmc.api.ClientModInitializer;
@@ -31,10 +32,16 @@ public final class ClipsClient implements ClientModInitializer {
   private static final SystemToast.SystemToastId TOAST = new SystemToast.SystemToastId(4000L);
   private static Recorder recorder;
   private static KeyMapping saveMapping;
+  private static Studio studio;
 
   /** The running recorder, or null before the game finished starting. */
   public static Recorder recorder() {
     return recorder;
+  }
+
+  /** The link to OrderSMP Studio and its uploads. */
+  public static Studio studio() {
+    return studio;
   }
 
   /** The mod's logger, shared so every message is tagged the same way. */
@@ -56,6 +63,7 @@ public final class ClipsClient implements ClientModInitializer {
     ClipsConfig config = ClipsConfig.load(FabricLoader.getInstance().getConfigDir().resolve(MOD_ID + ".json"), LOG);
     Recorder created = new Recorder(config, gameDir.resolve("clips"), LOG);
     RecordingHud hud = new RecordingHud(created, config.showHud());
+    studio = new Studio(config.studioUrl(), gameDir.resolve(MOD_ID), gameDir.resolve("clips"), LOG);
 
     KeyMapping.Category category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath(MOD_ID, "clips"));
     KeyMapping save = KeyMappingHelper.registerKeyMapping(
@@ -82,7 +90,10 @@ public final class ClipsClient implements ClientModInitializer {
             noFfmpeg ? Component.translatable("ordersmp-clips.toast.ffmpeg.body") : Component.literal(result.problem())));
       });
     });
-    ClientLifecycleEvents.CLIENT_STOPPING.register(client -> created.shutdown());
+    ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
+      created.shutdown();
+      studio.shutdown();
+    });
 
     PressDetector saveKey = new PressDetector(save);
     PressDetector toggleKey = new PressDetector(toggle);
@@ -139,6 +150,18 @@ public final class ClipsClient implements ClientModInitializer {
     LOG.info("Clip saved: {}", saved.file().getFileName());
     toast(client, Component.translatable("ordersmp-clips.toast.saved.title"),
         Component.translatable("ordersmp-clips.toast.saved.body", saved.seconds(), saved.file().getFileName().toString()));
+  }
+
+  /** Tells the player how an upload ended, wherever they are in the game. */
+  public static void announceUpload(Studio.Job job) {
+    Minecraft client = Minecraft.getInstance();
+    client.execute(() -> {
+      if (job.phase() == Studio.Phase.DONE) {
+        toast(client, Component.translatable("ordersmp-clips.upload.done.title"), Component.translatable("ordersmp-clips.upload.done.body"));
+        return;
+      }
+      toast(client, Component.translatable("ordersmp-clips.upload.failed.title"), Component.literal(String.valueOf(job.problem())));
+    });
   }
 
   /** Shows or replaces the mod's one toast, so messages never pile up. */

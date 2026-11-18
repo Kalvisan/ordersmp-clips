@@ -1,9 +1,11 @@
 package lv.ordersmp.clips.ui;
 
+import com.mojang.blaze3d.Blaze3D;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.platform.NativeImage;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.function.DoubleConsumer;
@@ -14,6 +16,8 @@ import lv.ordersmp.clips.Recorder;
 import lv.ordersmp.clips.edit.ClipEdit;
 import lv.ordersmp.clips.edit.ClipExport;
 import lv.ordersmp.clips.edit.VideoPreview;
+import lv.ordersmp.clips.studio.Studio;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.Button;
@@ -61,6 +65,7 @@ public final class EditorScreen extends Screen {
   private static final int WHITE = 0xFFFFFFFF;
   private static final int GRAY = 0xFFA0A0A0;
   private static final int BLACK = 0xFF000000;
+  private static final int GREEN = 0xFF55FF55;
   private static final long SEEK_INTERVAL_NANOS = 80_000_000L;
   private static final double STEP_SECONDS = 1;
 
@@ -68,7 +73,7 @@ public final class EditorScreen extends Screen {
   private final Recorder recorder;
   private final ClipLibrary.Clip clip;
   private final ClipEdit edit;
-  private final ClipEdit saved;
+  private ClipEdit saved;
   private final TabManager tabManager = new TabManager(this::addRenderableWidget, this::removeWidget);
   private int tabIndex;
   private VideoPreview preview;
@@ -92,6 +97,9 @@ public final class EditorScreen extends Screen {
   private TimeSlider endSlider;
   private Button removeButton;
   private Button exportButton;
+  private SpriteIconButton uploadButton;
+  private MultiLineTextWidget accountLine;
+  private Button unlinkButton;
   private TimelineWidget timeline;
   private TabNavigationBar tabs;
 
@@ -183,6 +191,7 @@ public final class EditorScreen extends Screen {
         VideoPreview.WIDTH, VideoPreview.HEIGHT, VideoPreview.WIDTH, VideoPreview.HEIGHT);
     String time = ClipsScreen.duration((int) edit.keptPosition(playhead)) + " / " + ClipsScreen.duration((int) Math.round(edit.keptLength()));
     graphics.text(font, time, previewX + 70, previewY + previewHeight + 10, edit.isRemoved(playhead) ? GRAY : WHITE);
+    drawUploadState(graphics);
   }
 
   @Override
@@ -280,15 +289,35 @@ public final class EditorScreen extends Screen {
   private GridLayoutTab sendTab(int controlWidth) {
     EditorTab tab = new EditorTab(Component.translatable("ordersmp-clips.editor.tab.send"));
     GridLayout.RowHelper rows = tab.rows(1);
-    Button studio = rows.addChild(textAndIcon("ordersmp-clips.editor.studio", UPLOAD, controlWidth, button -> {}));
-    studio.active = false;
-    studio.setTooltip(Tooltip.create(Component.translatable("ordersmp-clips.editor.studio.later")));
+    uploadButton = rows.addChild(textAndIcon("ordersmp-clips.editor.studio", UPLOAD, controlWidth, button -> uploadPressed()));
+    accountLine = rows.addChild(new MultiLineTextWidget(Component.empty(), font).setMaxWidth(controlWidth));
+    unlinkButton = rows.addChild(Button.builder(Component.translatable("ordersmp-clips.editor.unlink"), button -> {
+      ClipsClient.studio().unlink();
+      refreshControls();
+    }).width(controlWidth).build());
     exportButton = rows.addChild(Button.builder(Component.translatable("ordersmp-clips.editor.export"), button -> export())
         .width(controlWidth)
         .tooltip(Tooltip.create(Component.translatable("ordersmp-clips.editor.export.tooltip")))
         .build());
     rows.addChild(new MultiLineTextWidget(Component.translatable("ordersmp-clips.editor.send.note"), font).setMaxWidth(controlWidth));
     return tab;
+  }
+
+  /** A thin progress line under the upload button while sending, and the reason in red after a failure. */
+  private void drawUploadState(GuiGraphicsExtractor graphics) {
+    if (uploadButton == null || !uploadButton.visible) {
+      return;
+    }
+    Studio.Job job = ClipsClient.studio().job(clip.file());
+    if (job == null) {
+      return;
+    }
+    int x = uploadButton.getX();
+    int y = uploadButton.getBottom() + 1;
+    if (job.phase() == Studio.Phase.UPLOADING) {
+      graphics.fill(x, y, x + uploadButton.getWidth(), y + 1, BLACK);
+      graphics.fill(x, y, x + (int) (uploadButton.getWidth() * job.progress()), y + 1, GREEN);
+    }
   }
 
   /** Moves the playback clock and shows the frame that is due. Runs once per rendered frame. */
@@ -382,8 +411,69 @@ public final class EditorScreen extends Screen {
     endSlider.sync();
     removeButton.active = edit.canRemoveAt(playhead);
     removeButton.setMessage(Component.translatable(edit.isRemoved(playhead) ? "ordersmp-clips.editor.keep" : "ordersmp-clips.editor.remove"));
+    refreshUpload();
     exportButton.active = !exporting;
     exportButton.setMessage(Component.translatable(exporting ? "ordersmp-clips.editor.exporting" : "ordersmp-clips.editor.export"));
+  }
+
+  /** Shows the upload of this clip: start it, live percent, the reason it failed, or Open in Studio. */
+  private void refreshUpload() {
+    Studio studio = ClipsClient.studio();
+    Studio.Job job = studio.job(clip.file());
+    boolean linked = studio.isLinked();
+    accountLine.setMessage(linked
+        ? Component.translatable("ordersmp-clips.editor.linked", String.valueOf(studio.accountName()))
+        : Component.translatable("ordersmp-clips.editor.not_linked"));
+    unlinkButton.visible = linked;
+    uploadButton.active = true;
+    uploadButton.setTooltip(null);
+    if (job == null) {
+      uploadButton.setMessage(Component.translatable("ordersmp-clips.editor.studio"));
+      return;
+    }
+    switch (job.phase()) {
+      case PREPARING -> {
+        uploadButton.active = false;
+        uploadButton.setMessage(Component.translatable("ordersmp-clips.editor.upload.preparing"));
+      }
+      case UPLOADING -> {
+        uploadButton.active = false;
+        uploadButton.setMessage(Component.translatable("ordersmp-clips.editor.upload.progress", (int) Math.floor(job.progress() * 100)));
+      }
+      case DONE -> uploadButton.setMessage(Component.translatable("ordersmp-clips.editor.upload.open"));
+      case FAILED -> {
+        uploadButton.setMessage(Component.translatable("ordersmp-clips.editor.upload.retry"));
+        uploadButton.setTooltip(Tooltip.create(Component.literal(String.valueOf(job.problem()))));
+        accountLine.setMessage(Component.translatable("ordersmp-clips.editor.upload.failed", String.valueOf(job.problem()))
+            .withStyle(ChatFormatting.RED));
+      }
+    }
+  }
+
+  private void uploadPressed() {
+    Studio studio = ClipsClient.studio();
+    Studio.Job job = studio.job(clip.file());
+    if (job != null && job.phase() == Studio.Phase.DONE && job.url() != null) {
+      Blaze3D.openUri(URI.create(job.url()));
+      return;
+    }
+    if (!studio.isLinked()) {
+      minecraft.gui.setScreen(new StudioLinkScreen(this, studio, this::startUpload));
+      return;
+    }
+    startUpload();
+  }
+
+  /** Uploads the clip with the current cuts and keeps those cuts, as Done would. */
+  private void startUpload() {
+    try {
+      edit.save(clip.file());
+      saved = edit.copy();
+    } catch (IOException e) {
+      ClipsClient.log().warn("Could not keep the edit of {}", clip.file().getFileName(), e);
+    }
+    ClipsClient.studio().upload(clip, edit, recorder, ClipsClient::announceUpload);
+    refreshControls();
   }
 
   private void done() {

@@ -20,13 +20,17 @@ public final class ClipExport {
 
   private ClipExport() {}
 
-  /** Exports {@code edit} of {@code clip}; returns the new file, or null when ffmpeg failed. */
+  /** Exports {@code edit} of {@code clip} next to it; returns the new file, or null when ffmpeg failed. */
   public static Path export(Path clip, ClipEdit edit, String ffmpeg) {
+    return export(clip, edit, ffmpeg, freeName(clip));
+  }
+
+  /** Exports {@code edit} of {@code clip} to {@code target}; returns it, or null when ffmpeg failed. */
+  public static Path export(Path clip, ClipEdit edit, String ffmpeg, Path target) {
     List<ClipEdit.Part> kept = edit.kept();
     if (kept.isEmpty()) {
       return null;
     }
-    Path target = freeName(clip);
     if (kept.size() == 1) {
       return ClipLibrary.render(ffmpeg, target, copyPart(clip, kept.getFirst(), "+faststart"));
     }

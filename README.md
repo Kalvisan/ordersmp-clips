@@ -18,7 +18,7 @@ almost nothing in FPS. It works in singleplayer and on any server.
   is designed to keep working with Sodium, Iris and the Vulkan renderer (being tested, see below).
 - **Clear status.** A small `REC` mark in the corner shows whether recording is on, paused or
   needs attention. An optional overlay shows exactly what recording costs.
-- **Any server.** Nothing is sent anywhere. Clips stay on your PC.
+- **Any server.** Clips stay on your PC. Nothing leaves it unless you press **Upload to Studio**.
 - **Only while you play.** Nothing is recorded on the title screen or while loading.
 
 ## Requirements
@@ -87,6 +87,23 @@ The editor plays the clip in game and keeps editing to the basics:
   The video is copied, not re-encoded, so it takes a moment and keeps full quality. Because of
   that, a start point snaps back to the whole second before it.
 
+### Upload to Studio
+
+**Upload to Studio** (Upload tab in the editor) sends the clip, with your cuts, to your
+[OrderSMP Studio](https://studio.ordersmp.net) library, where effects, captions and posting are
+done.
+
+- The first time, Clips links this PC to your Studio account: your browser opens Studio with a
+  short code filled in, you press **Approve**, and the game continues by itself. You can also type
+  the code on the Studio page from another device.
+- The button shows live progress while the clip uploads, and becomes **Open in Studio** when it
+  is done. A dropped connection resumes where it stopped; a failed upload says why and can be
+  retried.
+- Nothing is posted anywhere until you post it in Studio.
+- **Unlink Studio** removes the link here and revokes it in Studio. You can also revoke it in
+  Studio's settings. The link is kept in `<instance>/ordersmp-clips/studio.json`, outside
+  `config/`, so it is not shared when you export a modpack.
+
 Thumbnails, timeline strips and edits are kept in hidden `.thumbnails` and `.edits` folders inside
 `<instance>/clips/`.
 
@@ -111,7 +128,8 @@ Settings live in `<instance>/config/ordersmp-clips.json`, created on first start
   "bitrateMbps": 0,
   "encoder": "",
   "ffmpegPath": "",
-  "showHud": true
+  "showHud": true,
+  "studioUrl": "https://studio.ordersmp.net"
 }
 ```
 
@@ -124,6 +142,7 @@ Settings live in `<instance>/config/ordersmp-clips.json`, created on first start
 | `encoder` | Force an encoder such as `h264_nvenc`; empty picks the best working one |
 | `ffmpegPath` | Full path to FFmpeg; empty searches the mod folder and `PATH` |
 | `showHud` | Show the recording mark |
+| `studioUrl` | The OrderSMP Studio that **Upload to Studio** sends clips to |
 
 Memory use is roughly bitrate times buffer length: 2 minutes at 10 Mbps is about 150 MB.
 
@@ -151,7 +170,6 @@ Memory use is roughly bitrate times buffer length: 2 minutes at 10 Mbps is about
 - Simple Voice Chat voices as separate tracks with a volume per player
 - Sound in the editor: game sound and voice volumes per player
 - Recording mode: film a whole session to disk instead of keeping the last minutes
-- Upload to OrderSMP Studio with live progress and a button that opens the clip in Studio
 - Builds for each new Minecraft release
 
 ## Building from source

@@ -21,15 +21,20 @@ import org.slf4j.Logger;
  * @param encoder preferred encoder name such as {@code h264_nvenc}, or empty to pick the best one
  * @param ffmpegPath path to the ffmpeg program, or empty to look for it on the system
  * @param showHud whether the recording mark is drawn
+ * @param studioUrl address of the OrderSMP Studio that clips upload to
  */
 public record ClipsConfig(
-    int bufferSeconds, int fps, int maxHeight, int bitrateMbps, String encoder, String ffmpegPath, boolean showHud) {
+    int bufferSeconds, int fps, int maxHeight, int bitrateMbps, String encoder, String ffmpegPath, boolean showHud,
+    String studioUrl) {
+
+  /** The public OrderSMP Studio. */
+  public static final String DEFAULT_STUDIO_URL = "https://studio.ordersmp.net";
 
   private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
   /** The settings a new player starts with: two minutes at 1080p and 60 frames per second. */
   public static ClipsConfig defaults() {
-    return new ClipsConfig(120, 60, 1080, 0, "", "", true);
+    return new ClipsConfig(120, 60, 1080, 0, "", "", true, DEFAULT_STUDIO_URL);
   }
 
   /** Loads the settings, writing the defaults when the file does not exist yet. */
@@ -71,7 +76,8 @@ public record ClipsConfig(
         clamp(bitrateMbps, 0, 80),
         encoder == null ? "" : encoder.trim(),
         ffmpegPath == null ? "" : ffmpegPath.trim(),
-        showHud);
+        showHud,
+        studioUrl(studioUrl));
   }
 
   /** Bitrate in bits per second, chosen from the recorded height when the player did not set one. */
@@ -86,6 +92,15 @@ public record ClipsConfig(
       return 10_000_000;
     }
     return 16_000_000;
+  }
+
+  /** An http or https address without a trailing slash; anything else falls back to the public Studio. */
+  private static String studioUrl(String value) {
+    if (value == null || !(value.startsWith("https://") || value.startsWith("http://"))) {
+      return DEFAULT_STUDIO_URL;
+    }
+    String trimmed = value.trim();
+    return trimmed.endsWith("/") ? trimmed.substring(0, trimmed.length() - 1) : trimmed;
   }
 
   private static int clamp(int value, int min, int max) {
