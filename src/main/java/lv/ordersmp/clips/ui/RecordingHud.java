@@ -51,8 +51,10 @@ public final class RecordingHud implements HudElement {
 
   private int drawMark(GuiGraphicsExtractor graphics, Font font) {
     Recorder.State state = recorder.state();
-    Component label = Component.translatable(switch (state) {
-      case RECORDING -> "ordersmp-clips.hud.rec";
+    Component label = state == Recorder.State.RECORDING && recorder.isRecordingSession()
+        ? Component.translatable("ordersmp-clips.hud.recording", ClipsScreen.duration(recorder.recordingSeconds()))
+        : Component.translatable(switch (state) {
+      case RECORDING -> "ordersmp-clips.hud.clip";
       case PAUSED -> "ordersmp-clips.hud.paused";
       case SAVING -> "ordersmp-clips.hud.saving";
       case STARTING -> "ordersmp-clips.hud.starting";

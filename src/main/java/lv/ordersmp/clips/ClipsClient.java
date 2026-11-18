@@ -32,6 +32,7 @@ public final class ClipsClient implements ClientModInitializer {
   private static final SystemToast.SystemToastId TOAST = new SystemToast.SystemToastId(4000L);
   private static Recorder recorder;
   private static KeyMapping saveMapping;
+  private static KeyMapping recordMapping;
   private static Studio studio;
 
   /** The running recorder, or null before the game finished starting. */
@@ -70,9 +71,12 @@ public final class ClipsClient implements ClientModInitializer {
         new KeyMapping("key." + MOD_ID + ".save", InputConstants.Type.KEYBOARD, InputConstants.KEY_F8, category));
     KeyMapping toggle = KeyMappingHelper.registerKeyMapping(
         new KeyMapping("key." + MOD_ID + ".toggle", InputConstants.Type.KEYBOARD, InputConstants.KEY_F9, category));
+    KeyMapping record = KeyMappingHelper.registerKeyMapping(
+        new KeyMapping("key." + MOD_ID + ".record", InputConstants.Type.KEYBOARD, InputConstants.KEY_F6, category));
     KeyMapping open = KeyMappingHelper.registerKeyMapping(
         new KeyMapping("key." + MOD_ID + ".open", InputConstants.Type.KEYBOARD, InputConstants.KEY_J, category));
     saveMapping = save;
+    recordMapping = record;
     KeyMapping stats = KeyMappingHelper.registerKeyMapping(
         new KeyMapping("key." + MOD_ID + ".stats", InputConstants.Type.KEYBOARD, InputConstants.UNKNOWN.getValue(), category));
 
@@ -99,6 +103,7 @@ public final class ClipsClient implements ClientModInitializer {
     PressDetector toggleKey = new PressDetector(toggle);
     PressDetector statsKey = new PressDetector(stats);
     PressDetector openKey = new PressDetector(open);
+    PressDetector recordKey = new PressDetector(record);
     ClientTickEvents.END_CLIENT_TICK.register(client -> {
       if (saveKey.pressed()) {
         created.saveClip(saved -> client.execute(() -> announce(client, saved)));
@@ -112,6 +117,14 @@ public final class ClipsClient implements ClientModInitializer {
       }
       if (openKey.pressed() && client.gui.screen() == null) {
         openScreen(null);
+      }
+      if (recordKey.pressed()) {
+        toggleRecording(client);
+      }
+      String stopped = created.recordingProblem();
+      if (stopped != null) {
+        created.stopRecording();
+        toast(client, Component.translatable("ordersmp-clips.toast.recording.stopped"), Component.literal(stopped));
       }
     });
   }
@@ -150,6 +163,26 @@ public final class ClipsClient implements ClientModInitializer {
     LOG.info("Clip saved: {}", saved.file().getFileName());
     toast(client, Component.translatable("ordersmp-clips.toast.saved.title"),
         Component.translatable("ordersmp-clips.toast.saved.body", saved.seconds(), saved.file().getFileName().toString()));
+  }
+
+  /** Starts or stops Recording mode and says what happened. */
+  public static void toggleRecording(Minecraft client) {
+    if (recorder == null) {
+      return;
+    }
+    if (recorder.isRecordingSession()) {
+      int parts = recorder.stopRecording();
+      toast(client, Component.translatable("ordersmp-clips.toast.recording.saved"),
+          Component.translatable("ordersmp-clips.toast.recording.parts", parts));
+      return;
+    }
+    String problem = recorder.startRecording();
+    if (problem != null) {
+      toast(client, Component.translatable("ordersmp-clips.toast.recording.failed"), Component.literal(problem));
+      return;
+    }
+    toast(client, Component.translatable("ordersmp-clips.toast.recording.started"),
+        Component.translatable("ordersmp-clips.toast.recording.started.body", recordMapping.getTranslatedKeyMessage()));
   }
 
   /** Tells the player how an upload ended, wherever they are in the game. */

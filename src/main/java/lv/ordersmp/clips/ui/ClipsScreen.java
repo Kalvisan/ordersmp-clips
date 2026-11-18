@@ -16,6 +16,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import lv.ordersmp.clips.ClipLibrary;
 import lv.ordersmp.clips.ClipsClient;
 import lv.ordersmp.clips.Recorder;
@@ -51,6 +53,7 @@ public final class ClipsScreen extends Screen {
   private static final Identifier CLIP = sprite("pause_menu/clips");
   private static final Identifier REC = sprite("icon/rec");
   private static final Identifier REC_OFF = sprite("icon/rec_off");
+  private static final Identifier FILM_STOP = sprite("icon/stop");
   private static final int WHITE = 0xFFFFFFFF;
   private static final int GRAY = 0xFFA0A0A0;
   private static final int DARK_GRAY = 0xFF808080;
@@ -58,6 +61,8 @@ public final class ClipsScreen extends Screen {
   private static final int BLACK = 0xFF000000;
   private static final int THUMB_WIDTH = 56;
   private static final int THUMB_HEIGHT = 32;
+  private static final int FOLDER_CHECK_TICKS = 20;
+  private static final Pattern PART = Pattern.compile("-part([0-9]+)$");
   private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm", Locale.ROOT);
   private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("d MMM", Locale.ENGLISH);
 
@@ -71,12 +76,15 @@ public final class ClipsScreen extends Screen {
   private Button watchButton;
   private Button deleteButton;
   private boolean toggleShowsPaused;
+  private boolean buttonShowsRecording;
   private Component status = Component.empty();
   private int statusColor = GRAY;
   private Component summary = Component.empty();
   private final Map<Path, Identifier> thumbnails = new HashMap<>();
   private final Set<Path> requested = new HashSet<>();
   private int generation;
+  private int ticks;
+  private long listedAt;
 
   public ClipsScreen(Screen parent, Recorder recorder, Component saveKey) {
     super(Component.translatable("ordersmp-clips.screen.title"));
@@ -109,6 +117,7 @@ public final class ClipsScreen extends Screen {
 
     layout.visitWidgets(this::addRenderableWidget);
     addRenderableWidget(recordToggle());
+    addRenderableWidget(sessionButton());
     repositionElements();
     list.fill();
     refresh();
@@ -124,6 +133,10 @@ public final class ClipsScreen extends Screen {
 
   @Override
   public void tick() {
+    if (++ticks % FOLDER_CHECK_TICKS == 0 && folderChanged()) {
+      reload();
+      list.fill();
+    }
     refresh();
   }
 
@@ -149,7 +162,25 @@ public final class ClipsScreen extends Screen {
     minecraft.gui.setScreen(parent);
   }
 
+  /**
+   * Whether files were added or removed in the clips folder since the list was read, so a clip or
+   * recording part that finishes while the screen is open shows up without reopening it.
+   */
+  private boolean folderChanged() {
+    long modified = folderModified();
+    return modified != listedAt;
+  }
+
+  private long folderModified() {
+    try {
+      return Files.getLastModifiedTime(recorder.clipsFolder()).toMillis();
+    } catch (IOException e) {
+      return 0;
+    }
+  }
+
   private void reload() {
+    listedAt = folderModified();
     try {
       clips = ClipLibrary.list(recorder.clipsFolder());
     } catch (IOException e) {
@@ -166,13 +197,16 @@ public final class ClipsScreen extends Screen {
       watchButton.active = selected;
       deleteButton.active = selected;
     }
-    if (watchButton != null && toggleShowsPaused != (recorder.state() == Recorder.State.PAUSED)) {
+    if (watchButton != null && (toggleShowsPaused != (recorder.state() == Recorder.State.PAUSED)
+        || buttonShowsRecording != recorder.isRecordingSession())) {
       rebuildWidgets();
       return;
     }
     statusColor = GRAY;
     status = switch (recorder.state()) {
-      case RECORDING -> Component.translatable("ordersmp-clips.screen.status.recording", saveKey, duration(recorder.bufferSeconds()));
+      case RECORDING -> recorder.isRecordingSession()
+          ? Component.translatable("ordersmp-clips.screen.status.session", duration(recorder.recordingSeconds()))
+          : Component.translatable("ordersmp-clips.screen.status.recording", saveKey, duration(recorder.bufferSeconds()));
       case PAUSED -> Component.translatable("ordersmp-clips.screen.status.paused");
       case SAVING -> Component.translatable("ordersmp-clips.screen.status.saving");
       case STARTING -> Component.translatable("ordersmp-clips.screen.status.starting");
@@ -181,6 +215,26 @@ public final class ClipsScreen extends Screen {
         yield Component.translatable("ordersmp-clips.screen.status.problem", String.valueOf(recorder.problem()));
       }
     };
+  }
+
+  /**
+   * The Recording mode button beside the record switch: starts writing everything to disk, or
+   * stops it. Its tooltip says which, and the header shows how long it has run.
+   */
+  private SpriteIconButton sessionButton() {
+    buttonShowsRecording = recorder.isRecordingSession();
+    String key = buttonShowsRecording ? "ordersmp-clips.screen.session.stop" : "ordersmp-clips.screen.session.start";
+    SpriteIconButton button = SpriteIconButton.builder(Component.translatable(key), pressed -> {
+          ClipsClient.toggleRecording(minecraft);
+          rebuildWidgets();
+        }, true)
+        .width(20)
+        .sprite(buttonShowsRecording ? FILM_STOP : CLIP, buttonShowsRecording ? 12 : 15, buttonShowsRecording ? 12 : 15)
+        .withTootip()
+        .build();
+    button.setPosition(30, 8);
+    button.active = recorder.state() == Recorder.State.RECORDING || recorder.state() == Recorder.State.SAVING || buttonShowsRecording;
+    return button;
   }
 
   /**
@@ -286,7 +340,17 @@ public final class ClipsScreen extends Screen {
     return Identifier.fromNamespaceAndPath(ClipsClient.MOD_ID, path);
   }
 
+  /** A clip's name for the player: when it was saved, and which part for Recording mode files. */
   static Component name(ClipLibrary.Clip clip) {
+    Component when = savedAt(clip);
+    Matcher part = PART.matcher(ClipLibrary.stem(clip.file()));
+    if (!part.find()) {
+      return when;
+    }
+    return Component.translatable("ordersmp-clips.screen.part", when, part.group(1));
+  }
+
+  private static Component savedAt(ClipLibrary.Clip clip) {
     LocalDateTime saved = LocalDateTime.ofInstant(clip.saved(), ZoneId.systemDefault());
     LocalDate today = LocalDate.now();
     String time = TIME.format(saved);
@@ -299,7 +363,11 @@ public final class ClipsScreen extends Screen {
     return Component.literal(DAY.format(saved) + " " + time);
   }
 
-  static String duration(int seconds) {
+  /** Seconds as {@code m:ss}, or {@code h:mm:ss} from an hour, for times shown to the player. */
+  public static String duration(int seconds) {
+    if (seconds >= 3600) {
+      return seconds / 3600 + ":" + String.format(Locale.ROOT, "%02d:%02d", seconds / 60 % 60, seconds % 60);
+    }
     return seconds / 60 + ":" + String.format(Locale.ROOT, "%02d", seconds % 60);
   }
 
@@ -322,7 +390,10 @@ public final class ClipsScreen extends Screen {
     }
 
     private void fill() {
+      ClipEntry selected = getSelected();
+      Path keep = selected == null ? null : selected.clip.file();
       replaceEntries(clips.stream().map(ClipEntry::new).toList());
+      children().stream().filter(entry -> entry.clip.file().equals(keep)).findFirst().ifPresent(this::setSelected);
       clips.forEach(clip -> requestThumbnail(clip.file()));
     }
 

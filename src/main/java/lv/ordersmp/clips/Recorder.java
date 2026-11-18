@@ -3,16 +3,19 @@ package lv.ordersmp.clips;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import lv.ordersmp.clips.capture.FrameCapture;
 import lv.ordersmp.clips.encode.ClipWriter;
 import lv.ordersmp.clips.encode.EncoderProbe;
 import lv.ordersmp.clips.encode.PacketRing;
+import lv.ordersmp.clips.encode.SessionRecording;
 import lv.ordersmp.clips.encode.VideoEncoder;
 import net.minecraft.client.Minecraft;
 import org.slf4j.Logger;
@@ -65,6 +68,7 @@ public final class Recorder {
   private double renderMicrosMaxShown;
   private long maxWindowStart;
   private volatile long lastSaveNanos;
+  private volatile SessionRecording session;
 
   public Recorder(ClipsConfig config, Path clipsFolder, Logger log) {
     this.config = config;
@@ -194,6 +198,76 @@ public final class Recorder {
     return ready == null ? null : ready.ffmpeg();
   }
 
+  /**
+   * Starts Recording mode: everything from now on is written to disk in parts, while the last
+   * minutes stay ready for the save key as before. Returns a reason when it cannot start, else null.
+   */
+  public String startRecording() {
+    EncoderProbe.Result ready = probe;
+    if (ready == null || !ready.ready()) {
+      return problem == null ? "recording has not started yet" : problem;
+    }
+    if (session != null) {
+      return null;
+    }
+    long partFrames = (long) config.recordingPartMinutes() * 60 * config.fps();
+    SessionRecording started = new SessionRecording(clipsFolder, ClipWriter.nameNow(), partFrames, this::finishPart);
+    session = started;
+    ring.tap(started);
+    log.info("Recording mode started");
+    return null;
+  }
+
+  /** Stops Recording mode; returns how many parts it wrote, which are finished in the background. */
+  public int stopRecording() {
+    SessionRecording current = session;
+    if (current == null) {
+      return 0;
+    }
+    session = null;
+    ring.tap(null);
+    int parts = current.stop();
+    log.info("Recording mode stopped after {} parts", parts);
+    return parts;
+  }
+
+  /** Whether Recording mode is on. */
+  public boolean isRecordingSession() {
+    return session != null;
+  }
+
+  /** Seconds Recording mode has written so far. */
+  public int recordingSeconds() {
+    SessionRecording current = session;
+    return current == null ? 0 : (int) (current.frames() / config.fps());
+  }
+
+  /** Why Recording mode stopped by itself (disk full, write error), or null. */
+  public String recordingProblem() {
+    SessionRecording current = session;
+    return current == null ? null : current.problem();
+  }
+
+  /** Turns a closed raw part into an MP4 with a thumbnail, on the saving thread, and removes the raw file. */
+  private void finishPart(Path raw, Path target) {
+    withFfmpeg(ffmpeg -> {
+      try {
+        String failed = ClipWriter.remux(ffmpeg, raw, config.fps(), target);
+        if (failed != null) {
+          log.warn("Recording part {} could not be written: {}", target.getFileName(), failed);
+          return null;
+        }
+        Files.deleteIfExists(raw);
+        ClipLibrary.thumbnail(target, ffmpeg);
+      } catch (IOException e) {
+        log.warn("Recording part {} could not be written", target.getFileName(), e);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+      return target;
+    });
+  }
+
   /** Pauses or resumes recording; resuming starts a fresh buffer. Returns true when now paused. */
   public boolean togglePause() {
     paused = !paused;
@@ -221,11 +295,17 @@ public final class Recorder {
         Minecraft.getInstance().getFps());
   }
 
-  /** Stops recording and frees the encoder and GPU resources. */
+  /** Stops recording and frees the encoder and GPU resources; waits briefly for parts to finish. */
   public void shutdown() {
+    stopRecording();
     stopEncoder();
     capture.close();
     saver.shutdown();
+    try {
+      saver.awaitTermination(30, TimeUnit.SECONDS);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
   }
 
   private void deliver(ByteBuffer frame) {
@@ -253,6 +333,10 @@ public final class Recorder {
   }
 
   private void stopEncoder() {
+    SessionRecording recording = session;
+    if (recording != null) {
+      recording.split();
+    }
     VideoEncoder current = encoder;
     encoder = null;
     if (current != null) {

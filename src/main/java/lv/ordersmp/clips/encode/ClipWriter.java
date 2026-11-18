@@ -44,17 +44,9 @@ public final class ClipWriter {
         return new Saved(null, 0, "nothing recorded yet");
       }
       Path target = folder.resolve(NAME.format(LocalDateTime.now()) + ".mp4");
-      Process mux = new ProcessBuilder(List.of(
-          ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-          "-f", "h264", "-framerate", Integer.toString(fps), "-i", raw.toString(),
-          "-c", "copy", "-movflags", "+faststart", target.toString()))
-          .redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start();
-      if (!mux.waitFor(MUX_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-        mux.destroyForcibly();
-        return new Saved(null, 0, "ffmpeg took too long to write the file");
-      }
-      if (mux.exitValue() != 0) {
-        return new Saved(null, 0, "ffmpeg could not write the file");
+      String problem = remux(ffmpeg, raw, fps, target);
+      if (problem != null) {
+        return new Saved(null, 0, problem);
       }
       return new Saved(target, Math.round((float) frames / fps), null);
     } catch (IOException e) {
@@ -65,6 +57,31 @@ public final class ClipWriter {
     } finally {
       deleteQuietly(raw);
     }
+  }
+
+  /**
+   * Copies a raw H.264 stream into an MP4 with the index at the front, without re-encoding.
+   * Returns null on success, or a short reason. Blocks while ffmpeg runs.
+   */
+  public static String remux(String ffmpeg, Path raw, int fps, Path target) throws IOException, InterruptedException {
+    Process mux = new ProcessBuilder(List.of(
+        ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+        "-f", "h264", "-framerate", Integer.toString(fps), "-i", raw.toString(),
+        "-c", "copy", "-movflags", "+faststart", target.toString()))
+        .redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start();
+    if (!mux.waitFor(MUX_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+      mux.destroyForcibly();
+      return "ffmpeg took too long to write the file";
+    }
+    if (mux.exitValue() != 0) {
+      return "ffmpeg could not write the file";
+    }
+    return null;
+  }
+
+  /** The file name a clip saved now gets, without the folder. */
+  public static String nameNow() {
+    return NAME.format(LocalDateTime.now());
   }
 
   private static void deleteQuietly(Path file) {

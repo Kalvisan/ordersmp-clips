@@ -22,10 +22,11 @@ import org.slf4j.Logger;
  * @param ffmpegPath path to the ffmpeg program, or empty to look for it on the system
  * @param showHud whether the recording mark is drawn
  * @param studioUrl address of the OrderSMP Studio that clips upload to
+ * @param recordingPartMinutes length of each file Recording mode writes
  */
 public record ClipsConfig(
     int bufferSeconds, int fps, int maxHeight, int bitrateMbps, String encoder, String ffmpegPath, boolean showHud,
-    String studioUrl) {
+    String studioUrl, int recordingPartMinutes) {
 
   /** The public OrderSMP Studio. */
   public static final String DEFAULT_STUDIO_URL = "https://studio.ordersmp.net";
@@ -34,7 +35,7 @@ public record ClipsConfig(
 
   /** The settings a new player starts with: two minutes at 1080p and 60 frames per second. */
   public static ClipsConfig defaults() {
-    return new ClipsConfig(120, 60, 1080, 0, "", "", true, DEFAULT_STUDIO_URL);
+    return new ClipsConfig(120, 60, 1080, 0, "", "", true, DEFAULT_STUDIO_URL, 10);
   }
 
   /** Loads the settings, writing the defaults when the file does not exist yet. */
@@ -77,7 +78,8 @@ public record ClipsConfig(
         encoder == null ? "" : encoder.trim(),
         ffmpegPath == null ? "" : ffmpegPath.trim(),
         showHud,
-        studioUrl(studioUrl));
+        studioUrl(studioUrl),
+        recordingPartMinutes == 0 ? 10 : clamp(recordingPartMinutes, 1, 60));
   }
 
   /** Bitrate in bits per second, chosen from the recorded height when the player did not set one. */

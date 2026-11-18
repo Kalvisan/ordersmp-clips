@@ -18,11 +18,17 @@ public final class PacketRing {
 
   private record Entry(int offset, int length, boolean keyframe) {}
 
+  /** Receives every encoded frame as it arrives, before the ring keeps or drops it. */
+  public interface Tap {
+    void frame(byte[] data, int length, boolean keyframe);
+  }
+
   private final ByteBuffer memory;
   private final ArrayDeque<Entry> entries = new ArrayDeque<>();
   private final int maxFrames;
   private int writeAt;
   private long dropped;
+  private volatile Tap tap;
 
   /**
    * @param capacityBytes size of the memory block
@@ -33,8 +39,17 @@ public final class PacketRing {
     this.maxFrames = maxFrames;
   }
 
+  /** Sends every new frame to {@code tap} as well, or stops doing so with null. */
+  public void tap(Tap tap) {
+    this.tap = tap;
+  }
+
   /** Adds one encoded frame; frames larger than a quarter of the buffer are dropped and counted. */
   public synchronized void add(byte[] data, int length, boolean keyframe) {
+    Tap current = tap;
+    if (current != null) {
+      current.frame(data, length, keyframe);
+    }
     if (length > memory.capacity() / 4) {
       dropped++;
       return;

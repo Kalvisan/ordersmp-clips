@@ -57,6 +57,7 @@ back to a software encoder, which uses more CPU.
 |---|---|
 | **F8** | Save the last minutes as a clip |
 | **F9** | Pause or resume recording |
+| **F6** | Start or stop Recording mode |
 | **J** | Open the Clips screen |
 | *(unbound)* | Show recording stats |
 
@@ -65,12 +66,24 @@ Keys can be changed in **Options > Controls > Key Binds > OrderSMP Clips**.
 Clips are saved to `<instance>/clips/` and named by date and time, for example
 `2026-11-18_21-14-03.mp4`.
 
+### Two modes: Clipping and Recording
+
+- **Clipping** (always on while you play) keeps the last minutes in memory. Nothing is written
+  to disk until you press **F8**.
+- **Recording** writes your whole session to disk. Press **F6**, or the camera button in the top
+  left corner of the Clips screen, to start and stop it. It saves in parts of 10 minutes
+  (`recordingPartMinutes`), so a crash loses at most the part being written; each part shows up
+  in the clip list as soon as it is finished and can be edited and uploaded like any clip.
+  Clipping and **F8** keep working while it runs. It stops by itself with a message when less
+  than 2 GB is free. 10 minutes at 1080p take about 750 MB.
+
 ### The Clips screen
 
 Press **J**, or **Esc** and the camera icon next to the other icons in the game menu. The screen
 shows whether recording is on and lists your clips, newest first, with a thumbnail, their length
 and size. Select a clip and press **Watch and Edit** (or double-click it) to open the editor, open
-the clips folder, or delete a clip. The dot in the top left corner pauses and resumes recording.
+the clips folder, or delete a clip. In the top left corner, the dot pauses and resumes clipping and
+the camera starts and stops Recording mode.
 
 ### The editor
 
@@ -111,7 +124,8 @@ Thumbnails, timeline strips and edits are kept in hidden `.thumbnails` and `.edi
 
 | Mark | Meaning |
 |---|---|
-| Red dot, `REC` | Recording; the last minutes are ready to save |
+| Red dot, `CLIP` | Clipping; the last minutes are ready to save |
+| Red dot, `REC 12:34` | Recording mode is writing everything to disk |
 | Yellow, `Saving` | A clip is being written |
 | Gray outline, `Paused` | Paused with F9 |
 | Yellow, `Clips off` | Something is missing; a message explains what |
@@ -129,7 +143,8 @@ Settings live in `<instance>/config/ordersmp-clips.json`, created on first start
   "encoder": "",
   "ffmpegPath": "",
   "showHud": true,
-  "studioUrl": "https://studio.ordersmp.net"
+  "studioUrl": "https://studio.ordersmp.net",
+  "recordingPartMinutes": 10
 }
 ```
 
@@ -143,6 +158,7 @@ Settings live in `<instance>/config/ordersmp-clips.json`, created on first start
 | `ffmpegPath` | Full path to FFmpeg; empty searches the mod folder and `PATH` |
 | `showHud` | Show the recording mark |
 | `studioUrl` | The OrderSMP Studio that **Upload to Studio** sends clips to |
+| `recordingPartMinutes` | Length of each file Recording mode writes (1 to 60 minutes) |
 
 Memory use is roughly bitrate times buffer length: 2 minutes at 10 Mbps is about 150 MB.
 
@@ -169,7 +185,6 @@ Memory use is roughly bitrate times buffer length: 2 minutes at 10 Mbps is about
 - Automatic clips on kills and deaths, trimmed from the first hit
 - Simple Voice Chat voices as separate tracks with a volume per player
 - Sound in the editor: game sound and voice volumes per player
-- Recording mode: film a whole session to disk instead of keeping the last minutes
 - Builds for each new Minecraft release
 
 ## Building from source
