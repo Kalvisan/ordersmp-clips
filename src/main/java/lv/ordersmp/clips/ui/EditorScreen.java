@@ -6,6 +6,10 @@ import com.mojang.blaze3d.platform.NativeImage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.function.DoubleConsumer;
@@ -21,6 +25,7 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.SpriteIconButton;
 import net.minecraft.client.gui.components.MultiLineTextWidget;
 import net.minecraft.client.gui.components.Tooltip;
@@ -37,7 +42,9 @@ import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.network.chat.CommonComponents;
+import net.minecraft.data.AtlasIds;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.contents.objects.AtlasSprite;
 import net.minecraft.resources.Identifier;
 import org.lwjgl.system.MemoryUtil;
 
@@ -58,6 +65,8 @@ public final class EditorScreen extends Screen {
   private static final Identifier TRASH = icon("trash");
   private static final Identifier CROSS = icon("cross");
   private static final Identifier UPLOAD = icon("upload");
+  private static final Identifier SPEAKER = icon("speaker");
+  private static final DateTimeFormatter TITLE_TIME = DateTimeFormatter.ofPattern("d MMM HH:mm", Locale.ENGLISH);
   private static final int MARGIN = 8;
   private static final int TOP = 20;
   private static final int RIGHT_MIN = 208;
@@ -199,6 +208,9 @@ public final class EditorScreen extends Screen {
 
   @Override
   public boolean keyPressed(KeyEvent event) {
+    if (getFocused() instanceof EditBox) {
+      return super.keyPressed(event);
+    }
     if (event.key() == InputConstants.KEY_SPACE) {
       togglePlay();
       return true;
@@ -249,7 +261,7 @@ public final class EditorScreen extends Screen {
   }
 
   private GridLayoutTab trimTab(int controlWidth) {
-    EditorTab tab = new EditorTab(Component.translatable("ordersmp-clips.editor.tab.trim"));
+    EditorTab tab = new EditorTab(withIcon(CUT, "ordersmp-clips.editor.tab.trim"));
     GridLayout.RowHelper rows = tab.rows(2);
     startSlider = rows.addChild(new TimeSlider(controlWidth, "ordersmp-clips.editor.trim.start", edit::start, value -> {
       edit.setStart(value);
@@ -282,7 +294,7 @@ public final class EditorScreen extends Screen {
   }
 
   private GridLayoutTab audioTab(int controlWidth) {
-    EditorTab tab = new EditorTab(Component.translatable("ordersmp-clips.editor.tab.audio"));
+    EditorTab tab = new EditorTab(withIcon(SPEAKER, "ordersmp-clips.editor.tab.audio"));
     GridLayout.RowHelper rows = tab.rows(1);
     rows.addChild(new MultiLineTextWidget(Component.translatable("ordersmp-clips.editor.audio.none"), font).setMaxWidth(controlWidth));
     rows.addChild(new MultiLineTextWidget(Component.translatable("ordersmp-clips.editor.audio.later"), font).setMaxWidth(controlWidth));
@@ -290,8 +302,13 @@ public final class EditorScreen extends Screen {
   }
 
   private GridLayoutTab sendTab(int controlWidth) {
-    EditorTab tab = new EditorTab(Component.translatable("ordersmp-clips.editor.tab.send"));
+    EditorTab tab = new EditorTab(withIcon(UPLOAD, "ordersmp-clips.editor.tab.send"));
     GridLayout.RowHelper rows = tab.rows(1);
+    EditBox titleBox = rows.addChild(new EditBox(font, controlWidth, 20, Component.translatable("ordersmp-clips.editor.title.field")));
+    titleBox.setMaxLength(120);
+    titleBox.setValue(uploadTitle());
+    titleBox.setTooltip(Tooltip.create(Component.translatable("ordersmp-clips.editor.title.tooltip")));
+    titleBox.setResponder(value -> edit.setTitle(value, generatedTitle()));
     uploadButton = rows.addChild(textAndIcon("ordersmp-clips.editor.studio", UPLOAD, controlWidth, button -> uploadPressed()));
     LinearLayout account = rows.addChild(LinearLayout.horizontal().spacing(4));
     accountLine = account.addChild(new MultiLineTextWidget(Component.empty(), font).setMaxWidth(controlWidth - 24));
@@ -489,7 +506,7 @@ public final class EditorScreen extends Screen {
     } catch (IOException e) {
       ClipsClient.log().warn("Could not keep the edit of {}", clip.file().getFileName(), e);
     }
-    ClipsClient.studio().upload(clip, edit, recorder, ClipsClient::announceUpload);
+    ClipsClient.studio().upload(clip, edit, uploadTitle(), recorder, ClipsClient::announceUpload);
     refreshControls();
   }
 
@@ -556,6 +573,23 @@ public final class EditorScreen extends Screen {
 
   private static SpriteIconButton textAndIcon(String key, Identifier sprite, int width, Button.OnPress onPress) {
     return SpriteIconButton.builder(Component.translatable(key), onPress, false).width(width).sprite(sprite, 12, 12).build();
+  }
+
+  /** The clip's title for Studio: what the player typed, or one made from the clip. */
+  private String uploadTitle() {
+    return edit.title() != null ? edit.title() : generatedTitle();
+  }
+
+  /** A title made from the clip, such as {@code Kill - Raven_77, 18 Nov 21:14}. */
+  private String generatedTitle() {
+    String when = TITLE_TIME.format(LocalDateTime.ofInstant(clip.saved(), ZoneId.systemDefault()));
+    String name = ClipsScreen.name(clip).getString();
+    return name.startsWith("Kill") || name.startsWith("Death") ? name + ", " + when : "Minecraft clip, " + when;
+  }
+
+  /** A tab or button label with one of the mod's pixel icons in front, drawn inside the text. */
+  private static Component withIcon(Identifier icon, String key) {
+    return Component.empty().append(Component.object(new AtlasSprite(AtlasIds.GUI, icon))).append(" ").append(Component.translatable(key));
   }
 
   private static Identifier icon(String name) {

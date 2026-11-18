@@ -11,11 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
-import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -81,7 +77,6 @@ public final class Studio {
   private record Saved(String studioUrl, String token, String expiresAt, String accountName) {}
 
   private static final Gson GSON = new Gson();
-  private static final DateTimeFormatter TITLE_TIME = DateTimeFormatter.ofPattern("d MMM yyyy HH:mm", Locale.ENGLISH);
   private static final long[] RETRY_PAUSES_MILLIS = {2_000, 5_000, 15_000, 30_000, 60_000};
 
   private final String baseUrl;
@@ -165,7 +160,7 @@ public final class Studio {
    * file with only the kept parts, by the recorder's ffmpeg thread, so the upload never re-encodes.
    * {@code done} runs on the upload thread when the job ends either way.
    */
-  public Job upload(ClipLibrary.Clip clip, ClipEdit edit, Recorder recorder, Consumer<Job> done) {
+  public Job upload(ClipLibrary.Clip clip, ClipEdit edit, String title, Recorder recorder, Consumer<Job> done) {
     Job running = jobs.get(clip.file());
     if (running != null && (running.phase == Phase.PREPARING || running.phase == Phase.UPLOADING)) {
       return running;
@@ -174,7 +169,7 @@ public final class Studio {
     jobs.put(clip.file(), job);
     ClipEdit snapshot = edit.copy();
     uploader.execute(() -> {
-      run(job, clip, snapshot, recorder);
+      run(job, clip, snapshot, title, recorder);
       done.accept(job);
     });
     return job;
@@ -186,7 +181,7 @@ public final class Studio {
     calls.shutdownNow();
   }
 
-  private void run(Job job, ClipLibrary.Clip clip, ClipEdit edit, Recorder recorder) {
+  private void run(Job job, ClipLibrary.Clip clip, ClipEdit edit, String title, Recorder recorder) {
     Saved current = account;
     if (current == null) {
       fail(job, "Link Studio first.");
@@ -206,17 +201,12 @@ public final class Studio {
         }
         file = temporary;
       }
-      send(job, current, file, title(clip));
+      send(job, current, file, title);
     } catch (IOException e) {
       fail(job, "The clip could not be read.");
     } finally {
       deleteQuietly(temporary);
     }
-  }
-
-  /** A readable title for Studio, such as {@code Minecraft clip, 18 Nov 2026 17:55}, from when it was saved. */
-  private static String title(ClipLibrary.Clip clip) {
-    return "Minecraft clip, " + TITLE_TIME.format(LocalDateTime.ofInstant(clip.saved(), ZoneId.systemDefault()));
   }
 
   private void send(Job job, Saved current, Path file, String title) throws IOException {

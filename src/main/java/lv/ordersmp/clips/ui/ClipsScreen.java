@@ -302,13 +302,35 @@ public final class ClipsScreen extends Screen {
         Component.translatable("ordersmp-clips.screen.delete"), CommonComponents.GUI_CANCEL));
   }
 
+  /**
+   * Deletes a clip and says so. On Windows a file can stay locked for a moment after its video
+   * player or preview closed, so a failed delete is tried once more before the player is told.
+   */
   private void delete(ClipLibrary.Clip clip) {
-    try {
-      ClipLibrary.delete(clip);
-    } catch (IOException e) {
-      ClipsClient.log().warn("Could not delete {}", clip.file().getFileName(), e);
+    Component name = name(clip);
+    IOException failure = null;
+    for (int attempt = 0; attempt < 2; attempt++) {
+      try {
+        ClipLibrary.delete(clip);
+        failure = null;
+        break;
+      } catch (IOException e) {
+        failure = e;
+        try {
+          Thread.sleep(250);
+        } catch (InterruptedException interrupted) {
+          Thread.currentThread().interrupt();
+          break;
+        }
+      }
     }
     reload();
+    if (failure != null) {
+      ClipsClient.log().warn("Could not delete {}", clip.file().getFileName(), failure);
+      ClipsClient.toast(minecraft, Component.translatable("ordersmp-clips.toast.delete.failed"), name);
+      return;
+    }
+    ClipsClient.toast(minecraft, Component.translatable("ordersmp-clips.toast.deleted"), name);
   }
 
   /** Asks for the clip's thumbnail once; it is made in the background and shown when ready. */

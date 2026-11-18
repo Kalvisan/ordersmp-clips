@@ -75,9 +75,7 @@ public final class TimelineWidget extends AbstractWidget {
 
     graphics.fill(laneX, laneY, laneRight, laneBottom, LANE);
     if (filmstrip != null) {
-      int stripWidth = ClipLibrary.FILMSTRIP_FRAMES * ClipLibrary.FILMSTRIP_FRAME_WIDTH;
-      graphics.blit(RenderPipelines.GUI_TEXTURED, filmstrip, laneX, laneY, 0, 0, laneRight - laneX, laneBottom - laneY,
-          stripWidth, ClipLibrary.FILMSTRIP_FRAME_HEIGHT, stripWidth, ClipLibrary.FILMSTRIP_FRAME_HEIGHT);
+      drawFilmstrip(graphics, laneX, laneY, laneRight, laneBottom);
     }
 
     graphics.fill(laneX, laneY, toX(edit.start()), laneBottom, OUTSIDE);
@@ -104,6 +102,24 @@ public final class TimelineWidget extends AbstractWidget {
 
     int head = toX(playhead.getAsDouble());
     graphics.fill(head, getY() + RULER_HEIGHT - 2, head + 1, laneBottom, PLAYHEAD);
+  }
+
+  /**
+   * Fills the lane with frames at their own 16:9 shape, each showing the strip frame nearest its
+   * place in time, so a wide screen shows more frames instead of stretched ones.
+   */
+  private void drawFilmstrip(GuiGraphicsExtractor graphics, int left, int top, int right, int bottom) {
+    int height = bottom - top;
+    int frameWidth = Math.max(8, height * 16 / 9);
+    int stripWidth = ClipLibrary.FILMSTRIP_FRAMES * ClipLibrary.FILMSTRIP_FRAME_WIDTH;
+    for (int x = left; x < right; x += frameWidth) {
+      int width = Math.min(frameWidth, right - x);
+      double middle = (x + frameWidth / 2.0 - left) / (right - left);
+      int frame = Math.min(ClipLibrary.FILMSTRIP_FRAMES - 1, (int) (middle * ClipLibrary.FILMSTRIP_FRAMES));
+      int sourceWidth = ClipLibrary.FILMSTRIP_FRAME_WIDTH * width / frameWidth;
+      graphics.blit(RenderPipelines.GUI_TEXTURED, filmstrip, x, top, frame * ClipLibrary.FILMSTRIP_FRAME_WIDTH, 0, width, height,
+          sourceWidth, ClipLibrary.FILMSTRIP_FRAME_HEIGHT, stripWidth, ClipLibrary.FILMSTRIP_FRAME_HEIGHT);
+    }
   }
 
   @Override

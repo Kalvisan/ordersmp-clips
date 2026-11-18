@@ -111,5 +111,9 @@
   "ordersmp-clips.hud.kill": "Kill x%s",
   "ordersmp-clips.editor.unlink.title": "Unlink Studio?",
   "ordersmp-clips.editor.unlink.body": "Clips stop uploading until you link this PC again. Clips already in Studio stay there.",
-  "ordersmp-clips.editor.unlink.confirm": "Unlink"
+  "ordersmp-clips.editor.unlink.confirm": "Unlink",
+  "ordersmp-clips.editor.title.field": "Title",
+  "ordersmp-clips.editor.title.tooltip": "The clip's title in Studio. Change it or keep the one made for you.",
+  "ordersmp-clips.toast.deleted": "Clip deleted",
+  "ordersmp-clips.toast.delete.failed": "Clip not deleted: still open somewhere"
 }

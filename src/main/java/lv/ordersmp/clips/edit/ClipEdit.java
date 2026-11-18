@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.TreeSet;
 import lv.ordersmp.clips.ClipLibrary;
 
@@ -42,7 +43,7 @@ public final class ClipEdit {
     }
   }
 
-  private record Stored(double start, double end, List<Double> cuts, List<Part> removed) {}
+  private record Stored(double start, double end, List<Double> cuts, List<Part> removed, String title) {}
 
   private static final Gson GSON = new Gson();
   private static final double MIN_LENGTH = 1;
@@ -53,6 +54,7 @@ public final class ClipEdit {
   private double end;
   private final TreeSet<Double> cuts = new TreeSet<>();
   private final List<Part> removed = new ArrayList<>();
+  private String title;
 
   private ClipEdit(double length) {
     this.length = length;
@@ -81,6 +83,7 @@ public final class ClipEdit {
       if (stored.cuts() != null) {
         stored.cuts().forEach(edit::cut);
       }
+      edit.title = stored.title();
       if (stored.removed() != null) {
         stored.removed().stream().filter(part -> part.from() < part.to()).forEach(edit.removed::add);
       }
@@ -98,7 +101,7 @@ public final class ClipEdit {
       return;
     }
     Files.createDirectories(file.getParent());
-    Files.writeString(file, GSON.toJson(new Stored(start, end, List.copyOf(cuts), List.copyOf(removed))), StandardCharsets.UTF_8);
+    Files.writeString(file, GSON.toJson(new Stored(start, end, List.copyOf(cuts), List.copyOf(removed), title)), StandardCharsets.UTF_8);
   }
 
   /** A separate copy, so a screen can tell whether anything changed. */
@@ -108,17 +111,30 @@ public final class ClipEdit {
     copy.end = end;
     copy.cuts.addAll(cuts);
     copy.removed.addAll(removed);
+    copy.title = title;
     return copy;
   }
 
   /** Whether this edit equals {@code other}. */
   public boolean sameAs(ClipEdit other) {
-    return start == other.start && end == other.end && cuts.equals(other.cuts) && removed.equals(other.removed);
+    return start == other.start && end == other.end && cuts.equals(other.cuts) && removed.equals(other.removed)
+        && Objects.equals(title, other.title);
   }
 
   /** Whether the edit keeps the clip exactly as recorded. */
   public boolean keepsEverything() {
-    return start == 0 && end == length && cuts.isEmpty() && removed.isEmpty();
+    return start == 0 && end == length && cuts.isEmpty() && removed.isEmpty() && title == null;
+  }
+
+  /** The title the player gave the clip for Studio, or null to use the generated one. */
+  public String title() {
+    return title;
+  }
+
+  /** Sets the title for Studio; blank or equal to {@code generated} keeps the generated one. */
+  public void setTitle(String value, String generated) {
+    String trimmed = value == null ? "" : value.strip();
+    title = trimmed.isEmpty() || trimmed.equals(generated) ? null : trimmed;
   }
 
   public double length() {
