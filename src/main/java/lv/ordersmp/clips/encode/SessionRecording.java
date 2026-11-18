@@ -5,7 +5,6 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.function.BiConsumer;
 
 /**
  * Recording mode: writes every encoded frame to disk instead of only keeping the last minutes.
@@ -16,13 +15,20 @@ import java.util.function.BiConsumer;
  */
 public final class SessionRecording implements PacketRing.Tap {
 
+  /** Receives a closed part: its raw file, the MP4 it should become, and when it was recorded. */
+  public interface PartClosed {
+    void closed(Path raw, Path target, long startNanos, long endNanos);
+  }
+
   private static final long MIN_FREE_BYTES = 2L * 1024 * 1024 * 1024;
   private static final int WRITE_BUFFER = 1 << 20;
 
   private final Path folder;
   private final String name;
   private final long partFrames;
-  private final BiConsumer<Path, Path> partClosed;
+  private final PartClosed partClosed;
+  private long partStart;
+  private long partEnd;
   private OutputStream out;
   private Path raw;
   private int part;
@@ -34,9 +40,9 @@ public final class SessionRecording implements PacketRing.Tap {
    * @param folder where parts are written
    * @param name session name; parts are named {@code <name>-part<n>.mp4}
    * @param partFrames frames in one part before the next keyframe starts a new one
-   * @param partClosed receives each closed part's raw file and the MP4 it should become
+   * @param partClosed receives each closed part's raw file, the MP4 it should become and its times
    */
-  public SessionRecording(Path folder, String name, long partFrames, BiConsumer<Path, Path> partClosed) {
+  public SessionRecording(Path folder, String name, long partFrames, PartClosed partClosed) {
     this.folder = folder;
     this.name = name;
     this.partFrames = partFrames;
@@ -44,7 +50,7 @@ public final class SessionRecording implements PacketRing.Tap {
   }
 
   @Override
-  public synchronized void frame(byte[] data, int length, boolean keyframe) {
+  public synchronized void frame(byte[] data, int length, boolean keyframe, long time) {
     if (problem != null) {
       return;
     }
@@ -58,6 +64,10 @@ public final class SessionRecording implements PacketRing.Tap {
     }
     try {
       out.write(data, 0, length);
+      if (framesInPart == 0) {
+        partStart = time;
+      }
+      partEnd = time;
       framesInPart++;
       frames++;
     } catch (IOException e) {
@@ -119,6 +129,6 @@ public final class SessionRecording implements PacketRing.Tap {
     }
     out = null;
     raw = null;
-    partClosed.accept(closed, folder.resolve(name + "-part" + part + ".mp4"));
+    partClosed.closed(closed, folder.resolve(name + "-part" + part + ".mp4"), partStart, partEnd);
   }
 }

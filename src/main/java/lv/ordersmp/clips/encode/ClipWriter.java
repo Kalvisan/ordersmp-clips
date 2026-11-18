@@ -27,8 +27,16 @@ public final class ClipWriter {
    * @param file the saved clip, or null when saving failed
    * @param seconds length of the clip
    * @param problem a short reason when saving failed, or null
+   * @param startNanos when the clip's first frame was recorded, from {@link System#nanoTime()}
+   * @param endNanos when the clip's last frame ends
    */
-  public record Saved(Path file, int seconds, String problem) {}
+  public record Saved(Path file, int seconds, String problem, long startNanos, long endNanos) {
+
+    /** A save that did not happen, and why. */
+    public static Saved failed(String problem) {
+      return new Saved(null, 0, problem, 0, 0);
+    }
+  }
 
   /**
    * Writes up to {@code seconds} of video ending {@code skipSeconds} before the newest frame to a
@@ -39,24 +47,25 @@ public final class ClipWriter {
     try {
       Files.createDirectories(folder);
       raw = Files.createTempFile(folder, ".clip-", ".h264");
-      int frames;
+      PacketRing.Written written;
       try (OutputStream out = new BufferedOutputStream(Files.newOutputStream(raw), 1 << 20)) {
-        frames = ring.writeLatest(fps * seconds, fps * skipSeconds, out);
+        written = ring.writeLatest(fps * seconds, fps * skipSeconds, out);
       }
+      int frames = written.frames();
       if (frames < fps) {
-        return new Saved(null, 0, "nothing recorded yet");
+        return Saved.failed("nothing recorded yet");
       }
       Path target = folder.resolve(NAME.format(LocalDateTime.now()) + suffix + ".mp4");
       String problem = remux(ffmpeg, raw, fps, target);
       if (problem != null) {
-        return new Saved(null, 0, problem);
+        return Saved.failed(problem);
       }
-      return new Saved(target, Math.round((float) frames / fps), null);
+      return new Saved(target, Math.round((float) frames / fps), null, written.first(), written.last() + 1_000_000_000L / fps);
     } catch (IOException e) {
-      return new Saved(null, 0, e.getMessage());
+      return Saved.failed(e.getMessage());
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
-      return new Saved(null, 0, "saving was interrupted");
+      return Saved.failed("saving was interrupted");
     } finally {
       deleteQuietly(raw);
     }

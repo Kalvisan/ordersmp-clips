@@ -193,7 +193,7 @@ public final class Recorder {
   private void save(int seconds, int skipSeconds, String suffix, Consumer<ClipWriter.Saved> done) {
     EncoderProbe.Result ready = probe;
     if (ready == null || !ready.ready()) {
-      done.accept(new ClipWriter.Saved(null, 0, problem == null ? "recording has not started yet" : problem));
+      done.accept(ClipWriter.Saved.failed(problem == null ? "recording has not started yet" : problem));
       return;
     }
     State before = state == State.SAVING ? State.RECORDING : state;
@@ -284,7 +284,7 @@ public final class Recorder {
   }
 
   /** Turns a closed raw part into an MP4 with a thumbnail, on the saving thread, and removes the raw file. */
-  private void finishPart(Path raw, Path target) {
+  private void finishPart(Path raw, Path target, long startNanos, long endNanos) {
     withFfmpeg(ffmpeg -> {
       try {
         String failed = ClipWriter.remux(ffmpeg, raw, config.fps(), target);
