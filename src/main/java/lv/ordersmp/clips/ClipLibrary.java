@@ -8,12 +8,18 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.FileTime;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
+import net.minecraft.util.Util;
 
 /**
  * The saved clips on disk. Clips are plain MP4 files in the clips folder, so the folder itself is
@@ -48,6 +54,10 @@ public final class ClipLibrary {
   private static final String EVENT_FOLDER = ".events";
   private static final String STUDIO_FOLDER = ".studio";
   private static final String AUDIO_FOLDER = ".audio";
+  private static final String KEPT_FOLDER = ".kept";
+  private static final long GIGABYTE = 1024L * 1024 * 1024;
+  private static final Duration NEW_CLIP = Duration.ofMinutes(5);
+  private static final Set<Path> DELETED = ConcurrentHashMap.newKeySet();
 
   private ClipLibrary() {}
 
@@ -58,7 +68,7 @@ public final class ClipLibrary {
     }
     List<Clip> clips = new ArrayList<>();
     try (Stream<Path> files = Files.list(folder)) {
-      for (Path file : files.filter(ClipLibrary::isClip).toList()) {
+      for (Path file : files.filter(ClipLibrary::isClip).filter(file -> !stillDeleting(file)).toList()) {
         clips.add(new Clip(file, Files.getLastModifiedTime(file).toInstant(), Files.size(file), length(file)));
       }
     }
@@ -66,15 +76,115 @@ public final class ClipLibrary {
     return clips;
   }
 
+  /**
+   * Whether {@code file} was deleted but still shows in the folder. On Windows a file that a video
+   * player or the preview still has open stays listed until it is closed; it must not come back
+   * into the list meanwhile.
+   */
+  private static boolean stillDeleting(Path file) {
+    if (!DELETED.contains(file)) {
+      return false;
+    }
+    if (Files.exists(file)) {
+      return true;
+    }
+    DELETED.remove(file);
+    return false;
+  }
+
   /** Deletes one clip and everything kept beside it: thumbnail, filmstrip and edits. */
   public static void delete(Clip clip) throws IOException {
     Files.deleteIfExists(clip.file());
+    DELETED.add(clip.file());
     Files.deleteIfExists(thumbnailFile(clip.file()));
     Files.deleteIfExists(filmstripFile(clip.file()));
     Files.deleteIfExists(editFile(clip.file()));
     Files.deleteIfExists(eventsFile(clip.file()));
     Files.deleteIfExists(studioFile(clip.file()));
+    Files.deleteIfExists(keptFile(clip.file()));
     deleteFolder(audioFolder(clip.file()));
+  }
+
+  /** Whether the player marked the clip Kept, so it is never deleted by the storage limits. */
+  public static boolean isKept(Path clip) {
+    return Files.exists(keptFile(clip));
+  }
+
+  /** Marks the clip Kept or takes the mark away. */
+  public static void setKept(Path clip, boolean kept) throws IOException {
+    Path marker = keptFile(clip);
+    if (!kept) {
+      Files.deleteIfExists(marker);
+      return;
+    }
+    Files.createDirectories(marker.getParent());
+    if (!Files.exists(marker)) {
+      Files.createFile(marker);
+    }
+  }
+
+  /**
+   * Whole days until a clip not marked Kept is deleted by the {@code days} limit, from 0 on its last
+   * day; -1 when it is kept or there is no limit.
+   */
+  public static int daysLeft(Clip clip, int days, Instant now) {
+    if (days <= 0 || isKept(clip.file())) {
+      return -1;
+    }
+    long age = Duration.between(clip.saved(), now).toDays();
+    return (int) Math.max(0, days - age - 1);
+  }
+
+  /**
+   * Deletes clips not marked Kept that are older than {@code days}, then the oldest of them while
+   * the folder is bigger than {@code maxSizeGb}. Clips from the last few minutes and those for which
+   * {@code busy} is true (being uploaded) are never touched. Returns how many were deleted. Reads
+   * and deletes files, so call it off the render thread.
+   */
+  public static int tidy(Path folder, int maxSizeGb, int days, Predicate<Path> busy) throws IOException {
+    if (maxSizeGb <= 0 && days <= 0) {
+      return 0;
+    }
+    List<Clip> clips = new ArrayList<>(list(folder));
+    Instant now = Instant.now();
+    long total = clips.stream().mapToLong(Clip::bytes).sum();
+    int deleted = 0;
+    clips.sort(Comparator.comparing(Clip::saved));
+    for (Clip clip : clips) {
+      if (isKept(clip.file()) || busy.test(clip.file()) || clip.saved().isAfter(now.minus(NEW_CLIP))) {
+        continue;
+      }
+      boolean tooOld = days > 0 && clip.saved().isBefore(now.minus(Duration.ofDays(days)));
+      boolean tooBig = maxSizeGb > 0 && total > maxSizeGb * GIGABYTE;
+      if (!tooOld && !tooBig) {
+        continue;
+      }
+      delete(clip);
+      total -= clip.bytes();
+      deleted++;
+    }
+    return deleted;
+  }
+
+  /**
+   * Copies an MP4 from elsewhere into the clips folder under a free name, so it can be watched,
+   * edited and uploaded like any clip. Its date is the moment it was added, so the storage limits
+   * count from then. Returns the new file.
+   */
+  public static Path importFile(Path source, Path folder) throws IOException {
+    Files.createDirectories(folder);
+    String name = Util.sanitizeName(stem(source), character -> Character.isLetterOrDigit(character) || character == '-' || character == '_');
+    Path target = folder.resolve(name + ".mp4");
+    for (int n = 2; Files.exists(target); n++) {
+      target = folder.resolve(name + "-" + n + ".mp4");
+    }
+    Files.copy(source, target);
+    Files.setLastModifiedTime(target, FileTime.from(Instant.now()));
+    return target;
+  }
+
+  private static Path keptFile(Path clip) {
+    return beside(clip, KEPT_FOLDER, ".kept");
   }
 
   /** Where the clip's sound tracks are kept: game sound and one per voice. */

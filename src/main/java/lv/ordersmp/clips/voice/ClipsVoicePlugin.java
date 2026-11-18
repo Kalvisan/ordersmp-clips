@@ -12,7 +12,8 @@ import lv.ordersmp.clips.audio.VoiceLog;
  * Simple Voice Chat plugin: hands the player's microphone and every voice they hear to the
  * {@link VoiceLog}, so clips get one track per speaker. Voice chat loads this class itself through
  * its {@code voicechat} entrypoint; without voice chat installed it is never loaded, and Clips
- * works without voices.
+ * works without voices. The My Voice and Players I Hear switches in Options stop either kind from
+ * being kept at all.
  */
 public final class ClipsVoicePlugin implements VoicechatPlugin {
 
@@ -25,9 +26,10 @@ public final class ClipsVoicePlugin implements VoicechatPlugin {
   public void registerEvents(EventRegistration registration) {
     registration.registerEvent(ClientSoundEvent.class, event -> {
       VoiceLog voices = ClipsClient.voiceLog();
-      if (voices != null) {
-        voices.spoke(event.getRawAudio());
+      if (voices == null || !ClipsClient.settings().recordMyVoice()) {
+        return;
       }
+      voices.spoke(event.getRawAudio());
     });
     registration.registerEvent(ClientReceiveSoundEvent.EntitySound.class, event -> heard(event.getId(), event.getRawAudio()));
     registration.registerEvent(ClientReceiveSoundEvent.LocationalSound.class, event -> heard(event.getId(), event.getRawAudio()));
@@ -36,7 +38,7 @@ public final class ClipsVoicePlugin implements VoicechatPlugin {
 
   private static void heard(UUID speaker, short[] samples) {
     VoiceLog voices = ClipsClient.voiceLog();
-    if (voices == null || speaker == null) {
+    if (voices == null || speaker == null || !ClipsClient.settings().recordOthers()) {
       return;
     }
     voices.heard(speaker, samples);

@@ -76,30 +76,47 @@ public final class Recorder {
     this.config = config;
     this.clipsFolder = clipsFolder;
     this.log = log;
-    this.ring = ringFor(config);
+    this.ring = ringFor(config, log);
   }
 
   /**
-   * Applies changed settings at once. A new quality, frame rate or buffer length needs a new
-   * buffer and encoder, so the minutes held so far are dropped; Recording mode keeps going.
+   * Applies changed settings at once. A new quality, frame rate, bitrate or buffer length needs a
+   * new buffer and encoder, so the minutes held so far are dropped; Recording mode keeps going.
    */
   public void reconfigure(ClipsConfig next) {
     ClipsConfig before = config;
     config = next;
-    if (before.bufferSeconds() == next.bufferSeconds() && before.fps() == next.fps() && before.maxHeight() == next.maxHeight()) {
+    if (before.bufferSeconds() == next.bufferSeconds() && before.fps() == next.fps() && before.maxHeight() == next.maxHeight()
+        && before.bitrateMbps() == next.bitrateMbps()) {
       return;
     }
     stopEncoder();
-    PacketRing fresh = ringFor(next);
+    PacketRing fresh = ringFor(next, log);
     fresh.tap(session);
     ring = fresh;
     nextCaptureNanos = 0;
   }
 
-  private static PacketRing ringFor(ClipsConfig config) {
-    int frames = config.bufferSeconds() * config.fps();
-    long bytes = (long) config.bitrateFor(config.maxHeight()) * 3 / 2 / 8 * (config.bufferSeconds() + 5);
-    return new PacketRing((int) Math.min(Integer.MAX_VALUE - 8, bytes), frames);
+  /**
+   * The buffer for the chosen Keep Last, sized from the bitrate. Ten minutes at a high quality is
+   * more than a gigabyte, so when Java cannot reserve that much memory the buffer is halved until it
+   * fits, and the log says how much it holds; recording goes on with the shorter buffer.
+   */
+  private static PacketRing ringFor(ClipsConfig config, Logger log) {
+    for (int seconds = config.bufferSeconds(); ; seconds /= 2) {
+      long bytes = (long) config.bitrateFor(config.maxHeight()) * 3 / 2 / 8 * (seconds + 5);
+      try {
+        PacketRing ring = new PacketRing((int) Math.min(Integer.MAX_VALUE - 8, bytes), config.bufferSeconds() * config.fps());
+        if (seconds < config.bufferSeconds()) {
+          log.warn("Not enough memory to keep the last {} s; keeping about {} s instead", config.bufferSeconds(), seconds);
+        }
+        return ring;
+      } catch (OutOfMemoryError e) {
+        if (seconds <= 30) {
+          throw e;
+        }
+      }
+    }
   }
 
   /** Gives saved clips and Recording parts their sound from now on. */

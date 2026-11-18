@@ -34,6 +34,7 @@ public final class RecordingHud {
   private final Recorder recorder;
   private boolean visible;
   private boolean showStats;
+  private boolean minimal;
 
   public RecordingHud(Recorder recorder, boolean visible) {
     this.recorder = recorder;
@@ -43,6 +44,11 @@ public final class RecordingHud {
   /** Shows or hides the recording mark. */
   public void setVisible(boolean visible) {
     this.visible = visible;
+  }
+
+  /** Draws only the mark's icon, without the text beside it. */
+  public void setMinimal(boolean minimal) {
+    this.minimal = minimal;
   }
 
   /** Shows or hides the stats overlay. */
@@ -84,12 +90,15 @@ public final class RecordingHud {
       label = fight;
     }
     int iconWidth = clipping ? CLIP_ICON_SIZE : 5;
-    int width = 4 + iconWidth + 3 + font.width(label) + 4;
+    int width = minimal ? 4 + iconWidth + 4 : 4 + iconWidth + 3 + font.width(label) + 4;
     graphics.fill(4, 4, 4 + width, 17, BACKGROUND);
     if (clipping) {
       graphics.blitSprite(RenderPipelines.GUI_TEXTURED, clipIcon(), 8, 6, CLIP_ICON_SIZE, CLIP_ICON_SIZE);
     } else {
       drawDot(graphics, 8, 8, state, color);
+    }
+    if (minimal) {
+      return 17;
     }
     graphics.text(font, label, 8 + iconWidth + 3, 6, fight != null ? YELLOW : state == Recorder.State.RECORDING ? WHITE : color);
     return 17;

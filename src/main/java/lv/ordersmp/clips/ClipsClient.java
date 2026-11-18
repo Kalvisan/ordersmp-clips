@@ -40,6 +40,7 @@ import net.minecraft.client.gui.components.toasts.SystemToast;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.util.Util;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -79,10 +80,11 @@ public final class ClipsClient implements ClientModInitializer {
     settings = change.apply(settings);
     settings.save(settingsFile, LOG);
     if (fights != null) {
-      fights.configure(settings.clipKills(), settings.clipDeaths(), settings.clipLongFights());
+      configure(fights, settings);
     }
     if (mark != null) {
       mark.setVisible(settings.showHud());
+      mark.setMinimal(settings.markMinimal());
     }
     if (recorder != null) {
       recorder.reconfigure(settings);
@@ -93,6 +95,42 @@ public final class ClipsClient implements ClientModInitializer {
     if (voiceLog != null) {
       voiceLog.keep(settings.bufferSeconds());
     }
+    tidyClips();
+  }
+
+  /** Passes the automatic clip choices and their seconds to the fight tracker. */
+  private static void configure(FightTracker tracker, ClipsConfig config) {
+    tracker.configure(config.clipKills(), config.clipDeaths(), config.clipLongFights(),
+        config.beforeSeconds(), config.afterSeconds(), config.closeKillsOneClip());
+  }
+
+  /**
+   * Applies the storage limits from Options in the background: clips not marked Kept that are older
+   * than the set days, or that make the folder bigger than the set size, are deleted. Clips being
+   * uploaded are left alone.
+   */
+  public static void tidyClips() {
+    if (recorder == null || (settings.maxSizeGb() <= 0 && settings.deleteAfterDays() <= 0)) {
+      return;
+    }
+    Path folder = recorder.clipsFolder();
+    int maxSize = settings.maxSizeGb();
+    int days = settings.deleteAfterDays();
+    Util.ioPool().execute(() -> {
+      try {
+        int deleted = ClipLibrary.tidy(folder, maxSize, days, ClipsClient::isUploading);
+        if (deleted > 0) {
+          LOG.info("Storage limits deleted {} old clips", deleted);
+        }
+      } catch (IOException e) {
+        LOG.warn("Could not apply the storage limits", e);
+      }
+    });
+  }
+
+  private static boolean isUploading(Path clip) {
+    Studio.Job job = studio == null ? null : studio.job(clip);
+    return job != null && (job.phase() == Studio.Phase.PREPARING || job.phase() == Studio.Phase.UPLOADING);
   }
 
   /** The log of game sounds that clips are mixed from, or null before the game finished starting. */
@@ -151,6 +189,7 @@ public final class ClipsClient implements ClientModInitializer {
     ClipsConfig config = ClipsConfig.load(FabricLoader.getInstance().getConfigDir().resolve(MOD_ID + ".json"), LOG);
     Recorder created = new Recorder(config, gameDir.resolve("clips"), LOG);
     RecordingHud hud = new RecordingHud(created, config.showHud());
+    hud.setMinimal(config.markMinimal());
     mark = hud;
     studio = new Studio(config.studioUrl(), gameDir.resolve(MOD_ID), gameDir.resolve("clips"), LOG);
 
@@ -170,7 +209,7 @@ public final class ClipsClient implements ClientModInitializer {
 
 
     FightTracker tracker = new FightTracker(System::nanoTime, moment -> saveMoment(created, moment));
-    tracker.configure(config.clipKills(), config.clipDeaths(), config.clipLongFights());
+    configure(tracker, config);
     settings = config;
     settingsFile = FabricLoader.getInstance().getConfigDir().resolve(MOD_ID + ".json");
 
@@ -186,6 +225,7 @@ public final class ClipsClient implements ClientModInitializer {
       recorder = created;
       fights = tracker;
       soundLog = sounds;
+      tidyClips();
       created.probe(gameDir.resolve(MOD_ID)).thenAccept(result -> {
         if (result.ready()) {
           return;
@@ -266,6 +306,7 @@ public final class ClipsClient implements ClientModInitializer {
       return;
     }
     LOG.info("Clip saved: {}", saved.file().getFileName());
+    tidyClips();
     toast(client, Component.translatable("ordersmp-clips.toast.saved.title"),
         Component.translatable("ordersmp-clips.toast.saved.body", saved.seconds(), saved.file().getFileName().toString()));
   }
@@ -285,6 +326,7 @@ public final class ClipsClient implements ClientModInitializer {
           if (saved.file() != null) {
             keepFightTrim(saved.file(), moment, after);
             sendIfWanted(recorder, saved.file());
+            tidyClips();
           }
           Minecraft.getInstance().execute(() -> announceMoment(moment, saved));
         });

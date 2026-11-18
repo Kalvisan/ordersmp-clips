@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.function.Consumer;
 import lv.ordersmp.clips.audio.AudioTracks;
 import org.slf4j.Logger;
 
@@ -31,20 +32,33 @@ import org.slf4j.Logger;
  * @param volumeGame default volume of game sound in new clips, in percent
  * @param volumeMine default volume of the player's own voice in new clips, in percent
  * @param volumeOthers default volume of other players' voices in new clips, in percent
+ * @param markMinimal draw the recording mark as an icon only, without its text
+ * @param beforeSeconds seconds of an automatic clip before the first hit
+ * @param afterSeconds seconds of an automatic clip after the last kill or the death
+ * @param closeKillsOneClip kills close together become one clip instead of one clip each
+ * @param recordMyVoice keep the player's own Simple Voice Chat voice in clips
+ * @param recordOthers keep the voices the player hears in clips
+ * @param maxSizeGb largest size of the clips folder in gigabytes, or 0 for no limit
+ * @param deleteAfterDays days after which clips not marked Kept are deleted, or 0 to keep them
  */
 public record ClipsConfig(
     int bufferSeconds, int fps, int maxHeight, int bitrateMbps, String encoder, String ffmpegPath, boolean showHud,
     String studioUrl, int recordingPartMinutes, Boolean clipKills, Boolean clipDeaths, Boolean clipLongFights, Boolean sendToStudio,
-    Integer volumeGame, Integer volumeMine, Integer volumeOthers) {
+    Integer volumeGame, Integer volumeMine, Integer volumeOthers, Boolean markMinimal, Integer beforeSeconds, Integer afterSeconds,
+    Boolean closeKillsOneClip, Boolean recordMyVoice, Boolean recordOthers, Integer maxSizeGb, Integer deleteAfterDays) {
 
   /** The public OrderSMP Studio. */
   public static final String DEFAULT_STUDIO_URL = "https://studio.ordersmp.net";
 
   private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
-  /** The settings a new player starts with: two minutes at 1080p and 60 frames per second. */
+  /**
+   * The settings a new player starts with: two minutes at 1080p and 60 frames per second. Nothing
+   * is deleted by itself until the player sets a size limit or a number of days.
+   */
   public static ClipsConfig defaults() {
-    return new ClipsConfig(120, 60, 1080, 0, "", "", true, DEFAULT_STUDIO_URL, 10, true, true, false, false, 100, 100, 100);
+    return new ClipsConfig(120, 60, 1080, 0, "", "", true, DEFAULT_STUDIO_URL, 10, true, true, false, false, 100, 100, 100,
+        false, 5, 4, true, true, true, 0, 0);
   }
 
   /** Loads the settings, writing the defaults when the file does not exist yet. */
@@ -77,10 +91,20 @@ public record ClipsConfig(
     }
   }
 
+  /**
+   * These settings with {@code change} applied, kept inside the ranges the recorder can handle.
+   * Every Options control changes settings through this one method.
+   */
+  public ClipsConfig with(Consumer<Builder> change) {
+    Builder builder = new Builder(this);
+    change.accept(builder);
+    return builder.build().sanitized();
+  }
+
   /** Keeps every value inside a range the recorder can handle, so a bad edit cannot break recording. */
   private ClipsConfig sanitized() {
     return new ClipsConfig(
-        clamp(bufferSeconds, 10, 300),
+        clamp(bufferSeconds, 10, 600),
         clamp(fps, 15, 60),
         clamp(maxHeight, 360, 2160) / 2 * 2,
         clamp(bitrateMbps, 0, 80),
@@ -95,37 +119,15 @@ public record ClipsConfig(
         sendToStudio != null && sendToStudio,
         percent(volumeGame),
         percent(volumeMine),
-        percent(volumeOthers));
-  }
-
-  /** These settings with other automatic clip choices. */
-  public ClipsConfig withClips(boolean kills, boolean deaths, boolean longFights) {
-    return new ClipsConfig(bufferSeconds, fps, maxHeight, bitrateMbps, encoder, ffmpegPath, showHud, studioUrl,
-        recordingPartMinutes, kills, deaths, longFights, sendToStudio, volumeGame, volumeMine, volumeOthers);
-  }
-
-  /** These settings with the recording mark shown or hidden. */
-  public ClipsConfig withShowHud(boolean show) {
-    return new ClipsConfig(bufferSeconds, fps, maxHeight, bitrateMbps, encoder, ffmpegPath, show, studioUrl,
-        recordingPartMinutes, clipKills, clipDeaths, clipLongFights, sendToStudio, volumeGame, volumeMine, volumeOthers);
-  }
-
-  /** These settings with another quality, frame rate, buffer length and part length. */
-  public ClipsConfig withVideo(int height, int frameRate, int keepSeconds, int partMinutes) {
-    return new ClipsConfig(keepSeconds, frameRate, height, bitrateMbps, encoder, ffmpegPath, showHud, studioUrl,
-        partMinutes, clipKills, clipDeaths, clipLongFights, sendToStudio, volumeGame, volumeMine, volumeOthers).sanitized();
-  }
-
-  /** These settings with automatic uploads to Studio turned on or off. */
-  public ClipsConfig withSendToStudio(boolean send) {
-    return new ClipsConfig(bufferSeconds, fps, maxHeight, bitrateMbps, encoder, ffmpegPath, showHud, studioUrl,
-        recordingPartMinutes, clipKills, clipDeaths, clipLongFights, send, volumeGame, volumeMine, volumeOthers);
-  }
-
-  /** These settings with other default volumes for new clips, in percent. */
-  public ClipsConfig withVolumes(int game, int mine, int others) {
-    return new ClipsConfig(bufferSeconds, fps, maxHeight, bitrateMbps, encoder, ffmpegPath, showHud, studioUrl,
-        recordingPartMinutes, clipKills, clipDeaths, clipLongFights, sendToStudio, game, mine, others).sanitized();
+        percent(volumeOthers),
+        markMinimal != null && markMinimal,
+        beforeSeconds == null ? 5 : clamp(beforeSeconds, 0, 15),
+        afterSeconds == null ? 4 : clamp(afterSeconds, 0, 15),
+        closeKillsOneClip == null || closeKillsOneClip,
+        recordMyVoice == null || recordMyVoice,
+        recordOthers == null || recordOthers,
+        maxSizeGb == null ? 0 : clamp(maxSizeGb, 0, 500),
+        deleteAfterDays == null ? 0 : clamp(deleteAfterDays, 0, 365));
   }
 
   /** The default volume in percent for a track of {@code kind}. */
@@ -158,6 +160,63 @@ public record ClipsConfig(
     }
     String trimmed = value.trim();
     return trimmed.endsWith("/") ? trimmed.substring(0, trimmed.length() - 1) : trimmed;
+  }
+
+  /** A changeable copy of the settings, used only inside {@link #with}. */
+  public static final class Builder {
+    public int bufferSeconds;
+    public int fps;
+    public int maxHeight;
+    public int bitrateMbps;
+    public boolean showHud;
+    public int recordingPartMinutes;
+    public boolean clipKills;
+    public boolean clipDeaths;
+    public boolean clipLongFights;
+    public boolean sendToStudio;
+    public int volumeGame;
+    public int volumeMine;
+    public int volumeOthers;
+    public boolean markMinimal;
+    public int beforeSeconds;
+    public int afterSeconds;
+    public boolean closeKillsOneClip;
+    public boolean recordMyVoice;
+    public boolean recordOthers;
+    public int maxSizeGb;
+    public int deleteAfterDays;
+    private final ClipsConfig from;
+
+    private Builder(ClipsConfig from) {
+      this.from = from;
+      bufferSeconds = from.bufferSeconds;
+      fps = from.fps;
+      maxHeight = from.maxHeight;
+      bitrateMbps = from.bitrateMbps;
+      showHud = from.showHud;
+      recordingPartMinutes = from.recordingPartMinutes;
+      clipKills = from.clipKills;
+      clipDeaths = from.clipDeaths;
+      clipLongFights = from.clipLongFights;
+      sendToStudio = from.sendToStudio;
+      volumeGame = from.volumeGame;
+      volumeMine = from.volumeMine;
+      volumeOthers = from.volumeOthers;
+      markMinimal = from.markMinimal;
+      beforeSeconds = from.beforeSeconds;
+      afterSeconds = from.afterSeconds;
+      closeKillsOneClip = from.closeKillsOneClip;
+      recordMyVoice = from.recordMyVoice;
+      recordOthers = from.recordOthers;
+      maxSizeGb = from.maxSizeGb;
+      deleteAfterDays = from.deleteAfterDays;
+    }
+
+    private ClipsConfig build() {
+      return new ClipsConfig(bufferSeconds, fps, maxHeight, bitrateMbps, from.encoder, from.ffmpegPath, showHud, from.studioUrl,
+          recordingPartMinutes, clipKills, clipDeaths, clipLongFights, sendToStudio, volumeGame, volumeMine, volumeOthers,
+          markMinimal, beforeSeconds, afterSeconds, closeKillsOneClip, recordMyVoice, recordOthers, maxSizeGb, deleteAfterDays);
+    }
   }
 
   private static int percent(Integer value) {

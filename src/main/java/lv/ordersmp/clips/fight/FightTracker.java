@@ -46,8 +46,6 @@ public final class FightTracker {
   private record Opponent(String name, long lastHit) {}
 
   private static final long SECOND = 1_000_000_000L;
-  private static final long LEAD_IN = 5 * SECOND;
-  private static final long FOLLOW_UP = 4 * SECOND;
   private static final long FIGHT_ENDS = 10 * SECOND;
   private static final long KILL_CREDIT = 10 * SECOND;
   private static final long MERGE_KILLS = 15 * SECOND;
@@ -70,6 +68,9 @@ public final class FightTracker {
   private boolean killsOn = true;
   private boolean deathsOn = true;
   private boolean longFightsOn;
+  private long leadIn = 5 * SECOND;
+  private long followUp = 4 * SECOND;
+  private boolean mergeKills = true;
 
   /**
    * @param clock current time in nanoseconds
@@ -80,11 +81,20 @@ public final class FightTracker {
     this.save = save;
   }
 
-  /** Which fights become clips; all off stops automatic clips. */
-  public void configure(boolean kills, boolean deaths, boolean longFights) {
+  /**
+   * Which fights become clips and how they are cut; all kinds off stops automatic clips.
+   *
+   * @param before seconds kept before the first hit
+   * @param after seconds kept after the last kill or the death
+   * @param oneClip kills close together make one clip; when false each kill is saved on its own
+   */
+  public void configure(boolean kills, boolean deaths, boolean longFights, int before, int after, boolean oneClip) {
     this.killsOn = kills;
     this.deathsOn = deaths;
     this.longFightsOn = longFights;
+    this.leadIn = before * SECOND;
+    this.followUp = after * SECOND;
+    this.mergeKills = oneClip;
   }
 
   /** Seconds since the fight began, or -1 when no fight is being followed. */
@@ -152,21 +162,32 @@ public final class FightTracker {
       if (longFightsOn && lastHit - fightStart >= LONG_FIGHT) {
         kind = Kind.FIGHT;
         opponent = lastOpponent();
-        save(now, lastHit + FOLLOW_UP);
+        save(now, lastHit + followUp);
         return;
       }
       reset();
       return;
     }
     long now = clock.getAsLong();
-    if (died ? now - lastMoment < FOLLOW_UP + DEATH_TAIL : now - lastMoment < MERGE_KILLS || now - lastHit < FIGHT_ENDS) {
+    if (died ? now - lastMoment < followUp + DEATH_TAIL : waitsForMoreKills(now)) {
       return;
     }
-    save(now, (died ? lastMoment : Math.max(lastMoment, lastHit)) + FOLLOW_UP);
+    save(now, (died ? lastMoment : Math.max(lastMoment, lastHit)) + followUp);
+  }
+
+  /**
+   * Whether a fight with a kill should wait before it is saved: for another kill to join it, or,
+   * with separate clips, only for the seconds kept after the kill.
+   */
+  private boolean waitsForMoreKills(long now) {
+    if (!mergeKills) {
+      return now - lastMoment < followUp;
+    }
+    return now - lastMoment < MERGE_KILLS || now - lastHit < FIGHT_ENDS;
   }
 
   private void save(long now, long end) {
-    long start = fightStart - LEAD_IN;
+    long start = fightStart - leadIn;
     int seconds = (int) Math.max(MIN_SECONDS, Math.min(MAX_SECONDS, (end - start + SECOND - 1) / SECOND));
     int skip = (int) Math.max(0, (now - end) / SECOND);
     List<Mark> marks = happened.stream()

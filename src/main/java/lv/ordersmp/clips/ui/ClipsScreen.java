@@ -4,12 +4,16 @@ import com.mojang.blaze3d.Blaze3D;
 import com.mojang.blaze3d.platform.NativeImage;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -27,9 +31,12 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.CycleButton;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.ObjectSelectionList;
 import net.minecraft.client.gui.components.SpriteIconButton;
 import net.minecraft.client.gui.components.StringWidget;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.layouts.HeaderAndFooterLayout;
 import net.minecraft.client.gui.layouts.LinearLayout;
 import net.minecraft.client.gui.layouts.SpacerElement;
@@ -42,13 +49,32 @@ import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.Util;
+import org.lwjgl.sdl.SDLDialog;
+import org.lwjgl.sdl.SDL_DialogFileCallback;
+import org.lwjgl.sdl.SDL_DialogFileFilter;
+
+import org.lwjgl.system.MemoryUtil;
+import org.lwjgl.system.Pointer;
 
 /**
  * The Clips screen, opened from the pause menu or its key. It follows the vanilla world list:
- * recording status in the header, saved clips in the middle, actions below. Clips play in the
- * system's video player, so the mod needs no player of its own yet.
+ * recording status, search, sort and a type filter in the header, saved clips in the middle,
+ * actions below. MP4 files from elsewhere come in with Import or by dropping them on the window.
  */
 public final class ClipsScreen extends Screen {
+
+  /** What kind of clip a file is, read from its name. */
+  enum Kind { KILL, DEATH, FIGHT, MANUAL, RECORDING }
+
+  /** Which clips the list shows. */
+  private enum Show { ALL, KILLS, DEATHS, FIGHTS, MANUAL, RECORDINGS, KEPT, IN_STUDIO }
+
+  /** What the list is ordered by; the arrow button flips the direction. */
+  private enum Sort { DATE, LENGTH, SIZE, TYPE }
+
+  private static Show show = Show.ALL;
+  private static Sort sort = Sort.DATE;
+  private static boolean descending = true;
 
   private static final Identifier PLAY = sprite("icon/play");
   private static final Identifier TRASH = sprite("icon/trash");
@@ -56,6 +82,13 @@ public final class ClipsScreen extends Screen {
   private static final Identifier REC = sprite("icon/rec");
   private static final Identifier UPLOAD = sprite("icon/upload");
   private static final Identifier GEAR = sprite("icon/gear");
+  private static final Identifier STAR = sprite("icon/star");
+  private static final Identifier CLOCK = sprite("icon/clock");
+  private static final Identifier SORT_DOWN = sprite("icon/sort_down");
+  private static final Identifier SORT_UP = sprite("icon/sort_up");
+  private static final int GOLD = 0xFFFFAA00;
+  private static final int YELLOW = 0xFFFFFF55;
+  private static final int SOON_DAYS = 3;
   private static final Identifier SWORD = sprite("hud/sword");
   private static final Identifier SKULL = sprite("hud/skull");
   private static final Identifier FIGHT = sprite("hud/fight");
@@ -83,7 +116,10 @@ public final class ClipsScreen extends Screen {
   private final Component saveKey;
   private HeaderAndFooterLayout layout;
   private List<ClipLibrary.Clip> clips;
+  private List<ClipLibrary.Clip> shown = List.of();
+  private String search = "";
   private ClipList list;
+  private Button keepButton;
   private StringWidget titleWidget;
   private Button watchButton;
   private Button deleteButton;
@@ -109,24 +145,57 @@ public final class ClipsScreen extends Screen {
     if (clips == null) {
       reload();
     }
-    layout = new HeaderAndFooterLayout(this, 8 + 9 + 4 + 9 + 8, 60);
+    layout = new HeaderAndFooterLayout(this, 8 + 9 + 4 + 9 + 4 + 20 + 4, 60);
     LinearLayout header = layout.addToHeader(LinearLayout.vertical().spacing(4));
     header.defaultCellSetting().alignHorizontallyCenter();
     titleWidget = header.addChild(new StringWidget(title, font));
     header.addChild(new SpacerElement(1, 9));
+    LinearLayout tools = header.addChild(LinearLayout.horizontal().spacing(4));
+    EditBox searchBox = tools.addChild(new EditBox(font, 140, 20, Component.translatable("ordersmp-clips.screen.search")));
+    searchBox.setHint(Component.translatable("ordersmp-clips.screen.search").withStyle(EditBox.SEARCH_HINT_STYLE));
+    searchBox.setValue(search);
+    searchBox.setResponder(text -> {
+      search = text;
+      list.fill();
+    });
+    tools.addChild(CycleButton.builder((Sort value) -> Component.translatable("ordersmp-clips.screen.sort." + value.name().toLowerCase(Locale.ROOT)), sort)
+        .withValues(List.of(Sort.values()))
+        .withTooltip(value -> Tooltip.create(Component.translatable("ordersmp-clips.screen.sort.tooltip")))
+        .create(0, 0, 104, 20, Component.translatable("ordersmp-clips.screen.sort"), (button, value) -> {
+          sort = value;
+          list.fill();
+        }));
+    tools.addChild(SpriteIconButton.builder(Component.translatable(descending ? "ordersmp-clips.screen.sort.down" : "ordersmp-clips.screen.sort.up"),
+            button -> {
+              descending = !descending;
+              rebuildWidgets();
+            }, true)
+        .width(20).sprite(descending ? SORT_DOWN : SORT_UP, 12, 12).withTootip().build());
+    tools.addChild(CycleButton.builder((Show value) -> Component.translatable("ordersmp-clips.screen.show." + value.name().toLowerCase(Locale.ROOT)), show)
+        .withValues(List.of(Show.values()))
+        .withTooltip(value -> Tooltip.create(Component.translatable("ordersmp-clips.screen.show.tooltip")))
+        .create(0, 0, 112, 20, Component.translatable("ordersmp-clips.screen.show"), (button, value) -> {
+          show = value;
+          list.fill();
+        }));
 
     list = layout.addToContents(new ClipList(minecraft, width, layout.getContentHeight(), layout.getHeaderHeight()));
 
     LinearLayout footer = layout.addToFooter(LinearLayout.vertical().spacing(4));
     footer.defaultCellSetting().alignHorizontallyCenter();
     LinearLayout top = footer.addChild(LinearLayout.horizontal().spacing(8));
-    watchButton = top.addChild(iconButton("ordersmp-clips.screen.watch", PLAY, 151, button -> editSelected()));
-    uploadButton = top.addChild(iconButton("ordersmp-clips.editor.studio", UPLOAD, 151, button -> uploadSelected()));
+    watchButton = top.addChild(iconButton("ordersmp-clips.screen.watch", PLAY, 194, button -> editSelected()));
+    uploadButton = top.addChild(iconButton("ordersmp-clips.editor.studio", UPLOAD, 194, button -> uploadSelected()));
     LinearLayout bottom = footer.addChild(LinearLayout.horizontal().spacing(8));
-    deleteButton = bottom.addChild(iconButton("ordersmp-clips.screen.delete", TRASH, 98, button -> confirmDelete()));
-    bottom.addChild(iconButton("ordersmp-clips.screen.options", GEAR, 98,
+    keepButton = bottom.addChild(iconButton("ordersmp-clips.screen.keep", STAR, 72, button -> toggleKept()));
+    deleteButton = bottom.addChild(iconButton("ordersmp-clips.screen.delete", TRASH, 72, button -> confirmDelete()));
+    bottom.addChild(Button.builder(Component.translatable("ordersmp-clips.screen.import"), button -> chooseFiles())
+        .width(72)
+        .tooltip(Tooltip.create(Component.translatable("ordersmp-clips.screen.import.tooltip")))
+        .build());
+    bottom.addChild(iconButton("ordersmp-clips.screen.options", GEAR, 72,
         button -> minecraft.gui.setScreen(new ClipsOptionsScreen(this, recorder))));
-    bottom.addChild(Button.builder(CommonComponents.GUI_DONE, button -> onClose()).width(98).build());
+    bottom.addChild(Button.builder(CommonComponents.GUI_DONE, button -> onClose()).width(72).build());
 
     layout.visitWidgets(this::addRenderableWidget);
     repositionElements();
@@ -156,6 +225,105 @@ public final class ClipsScreen extends Screen {
     super.extractRenderState(graphics, mouseX, mouseY, a);
     graphics.centeredText(font, status, width / 2, titleWidget.getY() + 9 + 4, statusColor);
     graphics.text(font, summary, width - font.width(summary) - 8, 8, DARK_GRAY);
+  }
+
+  /** MP4 files dropped on the window are imported like files picked with Import. */
+  @Override
+  public void onFilesDrop(List<Path> files) {
+    importFiles(files);
+  }
+
+  /**
+   * Opens the system's file picker for MP4 files. The picker answers on its own thread once the
+   * player chose, so the import itself is handed back to the game thread.
+   */
+  private void chooseFiles() {
+    ByteBuffer name = MemoryUtil.memUTF8("MP4 video");
+    ByteBuffer pattern = MemoryUtil.memUTF8("mp4");
+    SDL_DialogFileFilter.Buffer filters = SDL_DialogFileFilter.malloc(1);
+    filters.get(0).name(name).pattern(pattern);
+    SDL_DialogFileCallback[] holder = new SDL_DialogFileCallback[1];
+    holder[0] = SDL_DialogFileCallback.create((userdata, fileList, filter) -> {
+      List<Path> picked = pickedFiles(fileList);
+      minecraft.execute(() -> {
+        holder[0].free();
+        filters.free();
+        MemoryUtil.memFree(name);
+        MemoryUtil.memFree(pattern);
+        importFiles(picked);
+      });
+    });
+    SDLDialog.SDL_ShowOpenFileDialog(holder[0], 0L, minecraft.getWindow().handle(), filters, (CharSequence) null, true);
+  }
+
+  /** The paths in the picker's null-terminated list; empty when the player cancelled or it failed. */
+  private static List<Path> pickedFiles(long fileList) {
+    List<Path> picked = new ArrayList<>();
+    if (fileList == 0) {
+      return picked;
+    }
+    for (int i = 0; ; i++) {
+      long entry = MemoryUtil.memGetAddress(fileList + (long) i * Pointer.POINTER_SIZE);
+      if (entry == 0) {
+        return picked;
+      }
+      picked.add(Path.of(MemoryUtil.memUTF8(entry)));
+    }
+  }
+
+  /**
+   * Copies the MP4 files among {@code files} into the clips folder in the background and tells the
+   * player how many came in. Files that are not MP4 are skipped and named in the toast.
+   */
+  private void importFiles(List<Path> files) {
+    List<Path> videos = files.stream().filter(file -> file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".mp4")).toList();
+    if (videos.isEmpty()) {
+      if (!files.isEmpty()) {
+        ClipsClient.toast(minecraft, Component.translatable("ordersmp-clips.toast.import.none"), null);
+      }
+      return;
+    }
+    Path folder = recorder.clipsFolder();
+    Util.ioPool().execute(() -> {
+      int imported = 0;
+      for (Path video : videos) {
+        try {
+          ClipLibrary.importFile(video, folder);
+          imported++;
+        } catch (IOException e) {
+          ClipsClient.log().warn("Could not import {}", video.getFileName(), e);
+        }
+      }
+      int count = imported;
+      minecraft.execute(() -> {
+        ClipsClient.toast(minecraft, Component.translatable(count == videos.size() ? "ordersmp-clips.toast.import.done" : "ordersmp-clips.toast.import.some",
+            count, videos.size()), null);
+        if (clips != null) {
+          reload();
+          list.fill();
+        }
+      });
+    });
+  }
+
+  /** Marks the selected clip Kept, or takes the mark away, so the storage limits skip it. */
+  private void toggleKept() {
+    ClipEntry entry = list.getSelected();
+    if (entry == null) {
+      return;
+    }
+    boolean kept = !ClipLibrary.isKept(entry.clip.file());
+    try {
+      ClipLibrary.setKept(entry.clip.file(), kept);
+    } catch (IOException e) {
+      ClipsClient.log().warn("Could not change Kept for {}", entry.clip.file().getFileName(), e);
+      return;
+    }
+    entry.kept = kept;
+    if (show == Show.KEPT) {
+      list.fill();
+    }
+    refresh();
   }
 
   @Override
@@ -207,6 +375,10 @@ public final class ClipsScreen extends Screen {
     if (watchButton != null) {
       watchButton.active = selected;
       deleteButton.active = selected;
+      keepButton.active = selected;
+      boolean kept = selected && list.getSelected().kept;
+      keepButton.setMessage(Component.translatable(kept ? "ordersmp-clips.screen.kept" : "ordersmp-clips.screen.keep"));
+      keepButton.setTooltip(Tooltip.create(Component.translatable(kept ? "ordersmp-clips.screen.kept.tooltip" : "ordersmp-clips.screen.keep.tooltip")));
       refreshUploadButton();
     }
     statusColor = GRAY;
@@ -346,6 +518,9 @@ public final class ClipsScreen extends Screen {
       }
     }
     reload();
+    if (list != null) {
+      list.fill();
+    }
     if (failure != null) {
       ClipsClient.log().warn("Could not delete {}", clip.file().getFileName(), failure);
       ClipsClient.toast(minecraft, Component.translatable("ordersmp-clips.toast.delete.failed"), name);
@@ -384,6 +559,75 @@ public final class ClipsScreen extends Screen {
 
   private static Identifier sprite(String path) {
     return Identifier.fromNamespaceAndPath(ClipsClient.MOD_ID, path);
+  }
+
+  /** What kind of clip {@code clip} is, from its file name; anything else counts as saved by hand. */
+  static Kind kind(ClipLibrary.Clip clip) {
+    String stem = ClipLibrary.stem(clip.file());
+    Matcher moment = MOMENT.matcher(stem);
+    if (moment.find()) {
+      return switch (moment.group(1)) {
+        case "kill" -> Kind.KILL;
+        case "death" -> Kind.DEATH;
+        default -> Kind.FIGHT;
+      };
+    }
+    return PART.matcher(stem).find() ? Kind.RECORDING : Kind.MANUAL;
+  }
+
+  /** Whether {@code clip} belongs in the list for the chosen filter and search text. */
+  private boolean matches(ClipLibrary.Clip clip, Kind kind) {
+    boolean wanted = switch (show) {
+      case ALL -> true;
+      case KILLS -> kind == Kind.KILL;
+      case DEATHS -> kind == Kind.DEATH;
+      case FIGHTS -> kind == Kind.FIGHT;
+      case MANUAL -> kind == Kind.MANUAL;
+      case RECORDINGS -> kind == Kind.RECORDING;
+      case KEPT -> ClipLibrary.isKept(clip.file());
+      case IN_STUDIO -> ClipsClient.studio().uploadedUrl(clip.file()) != null;
+    };
+    if (!wanted) {
+      return false;
+    }
+    String query = search.trim().toLowerCase(Locale.ROOT);
+    if (query.isEmpty()) {
+      return true;
+    }
+    String text = String.join(" ", name(clip).getString(), savedAt(clip).getString(),
+        DAY.format(LocalDateTime.ofInstant(clip.saved(), ZoneId.systemDefault())),
+        Component.translatable("ordersmp-clips.screen.show." + showFor(kind)).getString(),
+        clip.file().getFileName().toString()).toLowerCase(Locale.ROOT);
+    for (String word : query.split("\\s+")) {
+      if (!text.contains(word)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private static String showFor(Kind kind) {
+    return switch (kind) {
+      case KILL -> "kills";
+      case DEATH -> "deaths";
+      case FIGHT -> "fights";
+      case MANUAL -> "manual";
+      case RECORDING -> "recordings";
+    };
+  }
+
+  /** The clips the list shows: filtered by type and search, ordered by the chosen sort. */
+  private List<ClipLibrary.Clip> visibleClips() {
+    Comparator<ClipLibrary.Clip> order = switch (sort) {
+      case DATE -> Comparator.comparing(ClipLibrary.Clip::saved);
+      case LENGTH -> Comparator.comparingDouble(ClipLibrary.Clip::seconds);
+      case SIZE -> Comparator.comparingLong(ClipLibrary.Clip::bytes);
+      case TYPE -> Comparator.<ClipLibrary.Clip, Kind>comparing(ClipsScreen::kind).thenComparing(ClipLibrary.Clip::saved);
+    };
+    return clips.stream()
+        .filter(clip -> matches(clip, kind(clip)))
+        .sorted(descending ? order.reversed() : order)
+        .toList();
   }
 
   /** A clip's name for the player: when it was saved, and which part for Recording mode files. */
@@ -432,7 +676,7 @@ public final class ClipsScreen extends Screen {
     return String.format(Locale.ROOT, "%.0f MB", megabytes);
   }
 
-  /** The list of saved clips, newest first. */
+  /** The list of saved clips, in the order and filter chosen above it. */
   private final class ClipList extends ObjectSelectionList<ClipEntry> {
 
     private ClipList(Minecraft minecraft, int width, int height, int y) {
@@ -442,9 +686,12 @@ public final class ClipsScreen extends Screen {
     private void fill() {
       ClipEntry selected = getSelected();
       Path keep = selected == null ? null : selected.clip.file();
-      replaceEntries(clips.stream().map(ClipEntry::new).toList());
+      shown = visibleClips();
+      replaceEntries(shown.stream().map(ClipEntry::new).toList());
       children().stream().filter(entry -> entry.clip.file().equals(keep)).findFirst().ifPresent(this::setSelected);
-      clips.forEach(clip -> requestThumbnail(clip.file()));
+      shown.forEach(clip -> requestThumbnail(clip.file()));
+      setScrollAmount(scrollAmount());
+      refresh();
     }
 
     @Override
@@ -458,8 +705,14 @@ public final class ClipsScreen extends Screen {
       if (!children().isEmpty()) {
         return;
       }
+      if (!clips.isEmpty()) {
+        graphics.centeredText(font, Component.translatable("ordersmp-clips.screen.no_match"), getX() + getWidth() / 2, getY() + getHeight() / 2 - 4, GRAY);
+        return;
+      }
       Component empty = Component.translatable("ordersmp-clips.screen.empty", saveKey, duration(recorder.bufferSeconds()));
-      graphics.centeredText(font, empty, getX() + getWidth() / 2, getY() + getHeight() / 2 - 4, GRAY);
+      Component more = Component.translatable("ordersmp-clips.screen.empty.import");
+      graphics.centeredText(font, empty, getX() + getWidth() / 2, getY() + getHeight() / 2 - 10, GRAY);
+      graphics.centeredText(font, more, getX() + getWidth() / 2, getY() + getHeight() / 2 + 2, DARK_GRAY);
     }
   }
 
@@ -470,9 +723,11 @@ public final class ClipsScreen extends Screen {
     private final Component name;
     private final Component details;
     private final Identifier icon;
+    private boolean kept;
 
     private ClipEntry(ClipLibrary.Clip clip) {
       this.clip = clip;
+      this.kept = ClipLibrary.isKept(clip.file());
       this.name = ClipsScreen.name(clip);
       String length = clip.seconds() < 0 ? "?" : duration((int) Math.round(clip.seconds()));
       Matcher moment = MOMENT.matcher(ClipLibrary.stem(clip.file()));
@@ -511,7 +766,31 @@ public final class ClipsScreen extends Screen {
       graphics.blitSprite(RenderPipelines.GUI_TEXTURED, icon, textX, getContentY(), 9, 9);
       graphics.text(font, name, textX + 12, getContentY() + 1, WHITE);
       graphics.text(font, details, textX, getContentY() + 9 + 3, DARK_GRAY);
-      drawStudioState(graphics, textX, getContentY() + 9 + 9 + 5);
+      int next = drawKept(graphics, textX, getContentY() + 9 + 9 + 5);
+      drawStudioState(graphics, next, getContentY() + 9 + 9 + 5);
+    }
+
+    /**
+     * Gold star Kept, or a clock with the days until the storage limit deletes the clip (yellow in
+     * its last days); nothing when no day limit is set. Returns where the next text may start.
+     */
+    private int drawKept(GuiGraphicsExtractor graphics, int x, int y) {
+      if (kept) {
+        graphics.blitSprite(RenderPipelines.GUI_TEXTURED, STAR, x - 1, y - 2, 12, 12);
+        Component text = Component.translatable("ordersmp-clips.screen.kept");
+        graphics.text(font, text, x + 12, y, GOLD);
+        return x + 12 + font.width(text) + 8;
+      }
+      int left = ClipLibrary.daysLeft(clip, ClipsClient.settings().deleteAfterDays(), Instant.now());
+      if (left < 0) {
+        return x;
+      }
+      Component text = left == 0
+          ? Component.translatable("ordersmp-clips.screen.days_left.today")
+          : Component.translatable("ordersmp-clips.screen.days_left", left);
+      graphics.blitSprite(RenderPipelines.GUI_TEXTURED, CLOCK, x - 1, y - 2, 12, 12);
+      graphics.text(font, text, x + 12, y, left <= SOON_DAYS ? YELLOW : DARK_GRAY);
+      return x + 12 + font.width(text) + 8;
     }
 
     /** The clip's place in Studio: uploading with percent, in Studio, or not uploaded with the reason. */

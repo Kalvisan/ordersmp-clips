@@ -86,13 +86,35 @@ Clips are saved to `<instance>/clips/` and named by date and time, for example
 ### The Clips screen
 
 Press **J**, or **Esc** and the camera icon next to the other icons in the game menu. The screen
-shows whether recording is on and lists your clips, newest first, with a thumbnail, their length
-and size. Select a clip and press **Watch and Edit** (or double-click it) to open the editor, open
-**Upload to Studio**, or delete a clip. **Options** has a quick page (quality, how much to keep,
-Auto Clip, clipping on or off, Recording mode, Studio, key binds) and an **Advanced** page with
-every setting (frame rate, recording parts, which moments save themselves, the recording mark,
-storage). Changes apply at once; a new quality, frame rate or Keep Last starts the buffer again. Each clip shows its type (sword, skull, crossed
-swords, film strip) and whether it is in Studio.
+shows whether recording is on and lists your clips with a thumbnail, their type (sword, skull,
+crossed swords, film strip), length, size and whether they are in Studio.
+
+- **Search** by player, type or date, such as `Raven` or `18 Nov`.
+- **Sort** by date, length, size or type; the arrow next to it flips the order.
+- **Show** all clips, or only kills, deaths, fights, clips saved by hand, Recording parts, Kept
+  clips or clips in Studio.
+- **Watch and Edit** (or double-click) opens the editor; **Upload to Studio** sends the clip.
+- **Keep** marks a clip so the storage limits never delete it. Without a mark, the list shows the
+  days left when **Delete Unkept After** is set.
+- **Import...** adds MP4 videos from your PC. You can also drop MP4 files on the window.
+
+### Options
+
+**Options** opens a quick page: quality, Keep Last (up to 10 minutes), Auto Clip, clipping on or
+off, Recording mode, default volumes, Studio, Status and key binds. **Advanced...** has every
+setting:
+
+- **Recording:** frame rate, bitrate, recording parts and the recording mark (on, minimal or off).
+- **Clip These Moments:** kills, deaths, long fights, seconds before the first hit and after the
+  kill, and whether kills close together make one clip or one each.
+- **Sound and Voice:** default volumes, and whether your voice and the players you hear are kept.
+- **Storage:** a size limit and a number of days after which clips not marked Kept are deleted
+  (both off by default), the clips folder, and Delete All.
+- **Status...** shows whether recording works, the encoder and how much is ready to save.
+
+Changes apply at once; a new quality, frame rate, bitrate or Keep Last starts the buffer again.
+The recording icon above your head is shown but disabled, because it needs server support that
+is not built yet.
 
 ### The editor
 
@@ -181,13 +203,21 @@ Settings live in `<instance>/config/ordersmp-clips.json`, created on first start
   "sendToStudio": false,
   "volumeGame": 100,
   "volumeMine": 100,
-  "volumeOthers": 100
+  "volumeOthers": 100,
+  "markMinimal": false,
+  "beforeSeconds": 5,
+  "afterSeconds": 4,
+  "closeKillsOneClip": true,
+  "recordMyVoice": true,
+  "recordOthers": true,
+  "maxSizeGb": 0,
+  "deleteAfterDays": 0
 }
 ```
 
 | Setting | Meaning |
 |---|---|
-| `bufferSeconds` | How much play is kept (10 to 300 seconds) |
+| `bufferSeconds` | How much play is kept (10 to 600 seconds) |
 | `fps` | Recording frame rate (15 to 60) |
 | `maxHeight` | Largest video height; bigger windows are scaled down (360 to 2160) |
 | `bitrateMbps` | Video bitrate; `0` picks one from the height (6, 10 or 16 Mbps) |
@@ -199,8 +229,15 @@ Settings live in `<instance>/config/ordersmp-clips.json`, created on first start
 | `volumeGame`, `volumeMine`, `volumeOthers` | Default volume in percent of game sound, your voice and other players in new clips |
 | `recordingPartMinutes` | Length of each file Recording mode writes (1 to 60 minutes) |
 | `clipKills`, `clipDeaths`, `clipLongFights` | Which moments save themselves (also in **Options**) |
+| `markMinimal` | Draw the recording mark as its icon only |
+| `beforeSeconds`, `afterSeconds` | Seconds an automatic clip keeps before the first hit and after the kill or death (0 to 15) |
+| `closeKillsOneClip` | Kills close together make one clip; `false` saves each kill on its own |
+| `recordMyVoice`, `recordOthers` | Keep your Simple Voice Chat voice, and the voices you hear, in clips |
+| `maxSizeGb` | Largest size of the clips folder; the oldest clips not marked Kept are deleted above it (`0` is no limit) |
+| `deleteAfterDays` | Days after which clips not marked Kept are deleted (`0` keeps them) |
 
-Memory use is roughly bitrate times buffer length: 2 minutes at 10 Mbps is about 150 MB.
+Memory use is roughly bitrate times buffer length: 2 minutes at 10 Mbps is about 150 MB, and 10 minutes
+about 1.1 GB. When Java cannot reserve that much, Clips keeps a shorter buffer and says so in the log.
 
 ## Troubleshooting
 
