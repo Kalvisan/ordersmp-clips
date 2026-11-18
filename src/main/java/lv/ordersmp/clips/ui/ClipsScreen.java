@@ -101,7 +101,7 @@ public final class ClipsScreen extends Screen {
     LinearLayout footer = layout.addToFooter(LinearLayout.vertical().spacing(4));
     footer.defaultCellSetting().alignHorizontallyCenter();
     LinearLayout top = footer.addChild(LinearLayout.horizontal().spacing(8));
-    watchButton = top.addChild(iconButton("ordersmp-clips.screen.watch", PLAY, 150, button -> watchSelected()));
+    watchButton = top.addChild(iconButton("ordersmp-clips.screen.watch", PLAY, 150, button -> editSelected()));
     top.addChild(iconButton("ordersmp-clips.screen.folder", FOLDER, 150, button -> openFolder()));
     LinearLayout bottom = footer.addChild(LinearLayout.horizontal().spacing(8));
     deleteButton = bottom.addChild(iconButton("ordersmp-clips.screen.delete", TRASH, 150, button -> confirmDelete()));
@@ -140,6 +140,7 @@ public final class ClipsScreen extends Screen {
     thumbnails.values().forEach(id -> minecraft.getTextureManager().release(id));
     thumbnails.clear();
     requested.clear();
+    clips = null;
     super.removed();
   }
 
@@ -202,12 +203,20 @@ public final class ClipsScreen extends Screen {
     return toggle;
   }
 
-  private void watchSelected() {
+  private void editSelected() {
     ClipEntry entry = list.getSelected();
     if (entry == null) {
       return;
     }
-    Blaze3D.openPath(entry.clip.file());
+    edit(entry.clip);
+  }
+
+  private void edit(ClipLibrary.Clip clip) {
+    if (clip.seconds() <= 0 || recorder.ffmpeg() == null) {
+      Blaze3D.openPath(clip.file());
+      return;
+    }
+    minecraft.gui.setScreen(new EditorScreen(this, recorder, clip));
   }
 
   private void openFolder() {
@@ -277,7 +286,7 @@ public final class ClipsScreen extends Screen {
     return Identifier.fromNamespaceAndPath(ClipsClient.MOD_ID, path);
   }
 
-  private static Component name(ClipLibrary.Clip clip) {
+  static Component name(ClipLibrary.Clip clip) {
     LocalDateTime saved = LocalDateTime.ofInstant(clip.saved(), ZoneId.systemDefault());
     LocalDate today = LocalDate.now();
     String time = TIME.format(saved);
@@ -290,7 +299,7 @@ public final class ClipsScreen extends Screen {
     return Component.literal(DAY.format(saved) + " " + time);
   }
 
-  private static String duration(int seconds) {
+  static String duration(int seconds) {
     return seconds / 60 + ":" + String.format(Locale.ROOT, "%02d", seconds % 60);
   }
 
@@ -343,7 +352,7 @@ public final class ClipsScreen extends Screen {
     private ClipEntry(ClipLibrary.Clip clip) {
       this.clip = clip;
       this.name = ClipsScreen.name(clip);
-      String length = clip.seconds() < 0 ? "?" : duration(clip.seconds());
+      String length = clip.seconds() < 0 ? "?" : duration((int) Math.round(clip.seconds()));
       this.details = Component.translatable("ordersmp-clips.screen.details", length, size(clip.bytes()));
     }
 
@@ -377,7 +386,7 @@ public final class ClipsScreen extends Screen {
       list.setSelected(this);
       refresh();
       if (doubleClick) {
-        Blaze3D.openPath(clip.file());
+        edit(clip);
         return true;
       }
       return super.mouseClicked(event, doubleClick);

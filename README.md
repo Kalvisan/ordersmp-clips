@@ -69,10 +69,26 @@ Clips are saved to `<instance>/clips/` and named by date and time, for example
 
 Press **J**, or **Esc** and the camera icon next to the other icons in the game menu. The screen
 shows whether recording is on and lists your clips, newest first, with a thumbnail, their length
-and size. Select a clip to watch it in your video player (or double-click it), open the clips
-folder, or delete it. The dot in the top left corner pauses and resumes recording.
+and size. Select a clip and press **Watch and Edit** (or double-click it) to open the editor, open
+the clips folder, or delete a clip. The dot in the top left corner pauses and resumes recording.
 
-Thumbnails are made by FFmpeg and kept in `<instance>/clips/.thumbnails/`.
+### The editor
+
+The editor plays the clip in game and keeps editing to the basics:
+
+- **Play controls:** start, play/pause, end. **Space** plays, **Left** and **Right** move one
+  second.
+- **Trim:** set where the clip starts and ends with the sliders or by dragging the handles on the
+  timeline.
+- **Cut Here** puts a cut at the playhead; **Remove Part** leaves out the part between two cuts
+  (striped on the timeline) and **Keep Part** brings it back. **Reset All** undoes everything.
+- **Done** keeps your edits next to the clip; the video file itself is never changed.
+- **Save as New Clip** (Send tab) writes only the kept parts to a new MP4 next to the original.
+  The video is copied, not re-encoded, so it takes a moment and keeps full quality. Because of
+  that, a start point snaps back to the whole second before it.
+
+Thumbnails, timeline strips and edits are kept in hidden `.thumbnails` and `.edits` folders inside
+`<instance>/clips/`.
 
 ### The recording mark
 
@@ -133,7 +149,8 @@ Memory use is roughly bitrate times buffer length: 2 minutes at 10 Mbps is about
 
 - Automatic clips on kills and deaths, trimmed from the first hit
 - Simple Voice Chat voices as separate tracks with a volume per player
-- A basic in-game editor (trim, cut, volumes)
+- Sound in the editor: game sound and voice volumes per player
+- Recording mode: film a whole session to disk instead of keeping the last minutes
 - Optional upload to OrderSMP Studio
 - Builds for each new Minecraft release
 

@@ -8,6 +8,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import lv.ordersmp.clips.capture.FrameCapture;
 import lv.ordersmp.clips.encode.ClipWriter;
 import lv.ordersmp.clips.encode.EncoderProbe;
@@ -170,16 +171,27 @@ public final class Recorder {
     });
   }
 
-  /**
-   * Makes the thumbnail of {@code clip} in the background if it is missing. Runs on the same thread
-   * as saving, so only one ffmpeg works at a time. Completes with null when there is no thumbnail.
-   */
+  /** Makes the thumbnail of {@code clip} in the background if it is missing; null when it cannot. */
   public CompletableFuture<Path> thumbnail(Path clip) {
+    return withFfmpeg(ffmpeg -> ClipLibrary.thumbnail(clip, ffmpeg));
+  }
+
+  /**
+   * Runs {@code work} with the ffmpeg program on the saving thread, so only one ffmpeg job runs at
+   * a time and none competes with saving a clip. Completes with null when ffmpeg is not available.
+   */
+  public <T> CompletableFuture<T> withFfmpeg(Function<String, T> work) {
     EncoderProbe.Result ready = probe;
     if (ready == null || ready.ffmpeg() == null) {
       return CompletableFuture.completedFuture(null);
     }
-    return CompletableFuture.supplyAsync(() -> ClipLibrary.thumbnail(clip, ready.ffmpeg()), saver);
+    return CompletableFuture.supplyAsync(() -> work.apply(ready.ffmpeg()), saver);
+  }
+
+  /** The ffmpeg program found at start, or null when there is none yet. */
+  public String ffmpeg() {
+    EncoderProbe.Result ready = probe;
+    return ready == null ? null : ready.ffmpeg();
   }
 
   /** Pauses or resumes recording; resuming starts a fresh buffer. Returns true when now paused. */

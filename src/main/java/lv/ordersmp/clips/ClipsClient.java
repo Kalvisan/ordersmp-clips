@@ -141,7 +141,8 @@ public final class ClipsClient implements ClientModInitializer {
         Component.translatable("ordersmp-clips.toast.saved.body", saved.seconds(), saved.file().getFileName().toString()));
   }
 
-  private static void toast(Minecraft client, Component title, Component body) {
+  /** Shows or replaces the mod's one toast, so messages never pile up. */
+  public static void toast(Minecraft client, Component title, Component body) {
     SystemToast.addOrUpdate(client.gui.toastManager(), TOAST, title, body);
   }
 }

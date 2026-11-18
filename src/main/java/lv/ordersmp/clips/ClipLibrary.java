@@ -30,15 +30,21 @@ public final class ClipLibrary {
    * @param bytes file size
    * @param seconds video length, or -1 when the file could not be read
    */
-  public record Clip(Path file, Instant saved, long bytes, int seconds) {}
+  public record Clip(Path file, Instant saved, long bytes, double seconds) {}
 
   /** Thumbnail size in pixels: twice the 56x32 it is drawn at, so it stays sharp at GUI scale 2. */
   public static final int THUMBNAIL_WIDTH = 112;
   public static final int THUMBNAIL_HEIGHT = 64;
 
   private static final int BOX_HEADER = 8;
-  private static final int THUMBNAIL_TIMEOUT_SECONDS = 15;
+  /** Frames in a filmstrip and the size of each, in pixels. */
+  public static final int FILMSTRIP_FRAMES = 10;
+  public static final int FILMSTRIP_FRAME_WIDTH = 64;
+  public static final int FILMSTRIP_FRAME_HEIGHT = 36;
+
+  private static final int FFMPEG_TIMEOUT_SECONDS = 60;
   private static final String THUMBNAIL_FOLDER = ".thumbnails";
+  private static final String EDIT_FOLDER = ".edits";
 
   private ClipLibrary() {}
 
@@ -57,16 +63,33 @@ public final class ClipLibrary {
     return clips;
   }
 
-  /** Deletes one clip and its thumbnail from disk. */
+  /** Deletes one clip and everything kept beside it: thumbnail, filmstrip and edits. */
   public static void delete(Clip clip) throws IOException {
     Files.deleteIfExists(clip.file());
     Files.deleteIfExists(thumbnailFile(clip.file()));
+    Files.deleteIfExists(filmstripFile(clip.file()));
+    Files.deleteIfExists(editFile(clip.file()));
   }
 
   /** Where the thumbnail of {@code clip} is kept: a hidden folder beside the clips. */
   public static Path thumbnailFile(Path clip) {
+    return beside(clip, THUMBNAIL_FOLDER, ".png");
+  }
+
+  /** Where the timeline's row of small frames from {@code clip} is kept. */
+  public static Path filmstripFile(Path clip) {
+    return beside(clip, THUMBNAIL_FOLDER, ".strip.png");
+  }
+
+  /** Where the editor keeps the trim and cuts of {@code clip}; the video itself is never changed. */
+  public static Path editFile(Path clip) {
+    return beside(clip, EDIT_FOLDER, ".json");
+  }
+
+  /** The clip's name without {@code .mp4}. */
+  public static String stem(Path clip) {
     String name = clip.getFileName().toString();
-    return clip.resolveSibling(THUMBNAIL_FOLDER).resolve(name.substring(0, name.length() - ".mp4".length()) + ".png");
+    return name.endsWith(".mp4") ? name.substring(0, name.length() - ".mp4".length()) : name;
   }
 
   /**
@@ -75,21 +98,45 @@ public final class ClipLibrary {
    * could not be made. Blocks while ffmpeg runs, so call it off the render thread.
    */
   public static Path thumbnail(Path clip, String ffmpeg) {
-    Path target = thumbnailFile(clip);
+    String size = THUMBNAIL_WIDTH + ":" + THUMBNAIL_HEIGHT;
+    return render(ffmpeg, thumbnailFile(clip), List.of("-sseof", "-3", "-i", clip.toString(), "-frames:v", "1",
+        "-vf", "scale=" + size + ":force_original_aspect_ratio=decrease,pad=" + size + ":(ow-iw)/2:(oh-ih)/2"));
+  }
+
+  /**
+   * Makes the timeline's filmstrip: {@link #FILMSTRIP_FRAMES} small frames spread over the clip,
+   * side by side in one image, so the timeline draws one texture instead of decoding video.
+   */
+  public static Path filmstrip(Path clip, int seconds, String ffmpeg) {
+    if (seconds <= 0) {
+      return null;
+    }
+    String size = FILMSTRIP_FRAME_WIDTH + ":" + FILMSTRIP_FRAME_HEIGHT;
+    String rate = FILMSTRIP_FRAMES + "/" + seconds;
+    return render(ffmpeg, filmstripFile(clip), List.of("-i", clip.toString(), "-frames:v", "1",
+        "-vf", "fps=" + rate + ",scale=" + size + ":force_original_aspect_ratio=decrease,pad=" + size
+            + ":(ow-iw)/2:(oh-ih)/2,tile=" + FILMSTRIP_FRAMES + "x1"));
+  }
+
+  /**
+   * Runs ffmpeg with {@code arguments} to write {@code target}, unless it already exists. Output goes
+   * to a temporary file first and is moved into place only when ffmpeg succeeded, so a crash never
+   * leaves half a file that would be shown later. Returns the file, or null on failure.
+   */
+  public static Path render(String ffmpeg, Path target, List<String> arguments) {
     if (Files.isRegularFile(target)) {
       return target;
     }
-    Path partial = target.resolveSibling(target.getFileName() + ".part.png");
+    String name = target.getFileName().toString();
+    Path partial = target.resolveSibling(".part-" + name);
+    List<String> command = new ArrayList<>(List.of(ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-y"));
+    command.addAll(arguments);
+    command.add(partial.toString());
     try {
       Files.createDirectories(target.getParent());
-      String size = THUMBNAIL_WIDTH + ":" + THUMBNAIL_HEIGHT;
-      Process process = new ProcessBuilder(List.of(
-          ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-          "-sseof", "-3", "-i", clip.toString(), "-frames:v", "1",
-          "-vf", "scale=" + size + ":force_original_aspect_ratio=decrease,pad=" + size + ":(ow-iw)/2:(oh-ih)/2",
-          partial.toString()))
+      Process process = new ProcessBuilder(command)
           .redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start();
-      if (!process.waitFor(THUMBNAIL_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+      if (!process.waitFor(FFMPEG_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
         process.destroyForcibly();
         return null;
       }
@@ -112,15 +159,20 @@ public final class ClipLibrary {
     }
   }
 
+  private static Path beside(Path clip, String folder, String suffix) {
+    return clip.resolveSibling(folder).resolve(stem(clip) + suffix);
+  }
+
   private static boolean isClip(Path file) {
-    return Files.isRegularFile(file) && file.getFileName().toString().endsWith(".mp4");
+    String name = file.getFileName().toString();
+    return !name.startsWith(".") && name.endsWith(".mp4") && Files.isRegularFile(file);
   }
 
   /**
    * Reads the length from the MP4 movie header. Clips are written with the header at the front, so
    * this reads a few dozen bytes instead of the whole file; other MP4s are skipped box by box.
    */
-  private static int seconds(Path file) {
+  private static double seconds(Path file) {
     try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ)) {
       long moov = findBox(channel, 0, channel.size(), "moov");
       if (moov < 0) {
@@ -137,7 +189,7 @@ public final class ClipLibrary {
       if (timescale == 0) {
         return -1;
       }
-      return (int) Math.round((double) duration / timescale);
+      return (double) duration / timescale;
     } catch (IOException | RuntimeException e) {
       return -1;
     }
