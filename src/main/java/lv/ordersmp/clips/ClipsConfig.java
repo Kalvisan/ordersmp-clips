@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import lv.ordersmp.clips.audio.AudioTracks;
 import org.slf4j.Logger;
 
 /**
@@ -27,10 +28,14 @@ import org.slf4j.Logger;
  * @param clipDeaths save a clip when the player dies in a fight
  * @param clipLongFights save a clip of a fight of 20 seconds or more that ends without a kill
  * @param sendToStudio upload new automatic clips to Studio by themselves
+ * @param volumeGame default volume of game sound in new clips, in percent
+ * @param volumeMine default volume of the player's own voice in new clips, in percent
+ * @param volumeOthers default volume of other players' voices in new clips, in percent
  */
 public record ClipsConfig(
     int bufferSeconds, int fps, int maxHeight, int bitrateMbps, String encoder, String ffmpegPath, boolean showHud,
-    String studioUrl, int recordingPartMinutes, Boolean clipKills, Boolean clipDeaths, Boolean clipLongFights, Boolean sendToStudio) {
+    String studioUrl, int recordingPartMinutes, Boolean clipKills, Boolean clipDeaths, Boolean clipLongFights, Boolean sendToStudio,
+    Integer volumeGame, Integer volumeMine, Integer volumeOthers) {
 
   /** The public OrderSMP Studio. */
   public static final String DEFAULT_STUDIO_URL = "https://studio.ordersmp.net";
@@ -39,7 +44,7 @@ public record ClipsConfig(
 
   /** The settings a new player starts with: two minutes at 1080p and 60 frames per second. */
   public static ClipsConfig defaults() {
-    return new ClipsConfig(120, 60, 1080, 0, "", "", true, DEFAULT_STUDIO_URL, 10, true, true, false, false);
+    return new ClipsConfig(120, 60, 1080, 0, "", "", true, DEFAULT_STUDIO_URL, 10, true, true, false, false, 100, 100, 100);
   }
 
   /** Loads the settings, writing the defaults when the file does not exist yet. */
@@ -87,31 +92,49 @@ public record ClipsConfig(
         clipKills == null || clipKills,
         clipDeaths == null || clipDeaths,
         clipLongFights != null && clipLongFights,
-        sendToStudio != null && sendToStudio);
+        sendToStudio != null && sendToStudio,
+        percent(volumeGame),
+        percent(volumeMine),
+        percent(volumeOthers));
   }
 
   /** These settings with other automatic clip choices. */
   public ClipsConfig withClips(boolean kills, boolean deaths, boolean longFights) {
     return new ClipsConfig(bufferSeconds, fps, maxHeight, bitrateMbps, encoder, ffmpegPath, showHud, studioUrl,
-        recordingPartMinutes, kills, deaths, longFights, sendToStudio);
+        recordingPartMinutes, kills, deaths, longFights, sendToStudio, volumeGame, volumeMine, volumeOthers);
   }
 
   /** These settings with the recording mark shown or hidden. */
   public ClipsConfig withShowHud(boolean show) {
     return new ClipsConfig(bufferSeconds, fps, maxHeight, bitrateMbps, encoder, ffmpegPath, show, studioUrl,
-        recordingPartMinutes, clipKills, clipDeaths, clipLongFights, sendToStudio);
+        recordingPartMinutes, clipKills, clipDeaths, clipLongFights, sendToStudio, volumeGame, volumeMine, volumeOthers);
   }
 
   /** These settings with another quality, frame rate, buffer length and part length. */
   public ClipsConfig withVideo(int height, int frameRate, int keepSeconds, int partMinutes) {
     return new ClipsConfig(keepSeconds, frameRate, height, bitrateMbps, encoder, ffmpegPath, showHud, studioUrl,
-        partMinutes, clipKills, clipDeaths, clipLongFights, sendToStudio).sanitized();
+        partMinutes, clipKills, clipDeaths, clipLongFights, sendToStudio, volumeGame, volumeMine, volumeOthers).sanitized();
   }
 
   /** These settings with automatic uploads to Studio turned on or off. */
   public ClipsConfig withSendToStudio(boolean send) {
     return new ClipsConfig(bufferSeconds, fps, maxHeight, bitrateMbps, encoder, ffmpegPath, showHud, studioUrl,
-        recordingPartMinutes, clipKills, clipDeaths, clipLongFights, send);
+        recordingPartMinutes, clipKills, clipDeaths, clipLongFights, send, volumeGame, volumeMine, volumeOthers);
+  }
+
+  /** These settings with other default volumes for new clips, in percent. */
+  public ClipsConfig withVolumes(int game, int mine, int others) {
+    return new ClipsConfig(bufferSeconds, fps, maxHeight, bitrateMbps, encoder, ffmpegPath, showHud, studioUrl,
+        recordingPartMinutes, clipKills, clipDeaths, clipLongFights, sendToStudio, game, mine, others).sanitized();
+  }
+
+  /** The default volume in percent for a track of {@code kind}. */
+  public int defaultVolume(AudioTracks.Kind kind) {
+    return switch (kind) {
+      case GAME -> volumeGame;
+      case MINE -> volumeMine;
+      case VOICE -> volumeOthers;
+    };
   }
 
   /** Bitrate in bits per second, chosen from the recorded height when the player did not set one. */
@@ -135,6 +158,10 @@ public record ClipsConfig(
     }
     String trimmed = value.trim();
     return trimmed.endsWith("/") ? trimmed.substring(0, trimmed.length() - 1) : trimmed;
+  }
+
+  private static int percent(Integer value) {
+    return value == null ? 100 : clamp(value, 0, 200);
   }
 
   private static int clamp(int value, int min, int max) {

@@ -8,10 +8,12 @@ import java.io.IOException;
 import lv.ordersmp.clips.edit.ClipEdit;
 import lv.ordersmp.clips.encode.ClipWriter;
 import java.util.List;
+import java.util.UUID;
 import com.mojang.blaze3d.audio.ListenerTransform;
 import lv.ordersmp.clips.audio.ClipAudio;
 import lv.ordersmp.clips.audio.SoundLog;
 import lv.ordersmp.clips.audio.SoundMixer;
+import lv.ordersmp.clips.audio.VoiceLog;
 import lv.ordersmp.clips.fight.ClipEvents;
 import lv.ordersmp.clips.fight.FightTracker;
 import lv.ordersmp.clips.mixin.GameRendererAccessor;
@@ -29,6 +31,8 @@ import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientPacketListener;
+import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.sounds.SoundManager;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -55,6 +59,7 @@ public final class ClipsClient implements ClientModInitializer {
   private static Studio studio;
   private static FightTracker fights;
   private static SoundLog soundLog;
+  private static VoiceLog voiceLog;
   private static RecordingHud mark;
   private static ClipsConfig settings;
   private static Path settingsFile;
@@ -85,11 +90,19 @@ public final class ClipsClient implements ClientModInitializer {
     if (soundLog != null) {
       soundLog.keep(soundWindow(settings));
     }
+    if (voiceLog != null) {
+      voiceLog.keep(settings.bufferSeconds());
+    }
   }
 
   /** The log of game sounds that clips are mixed from, or null before the game finished starting. */
   public static SoundLog soundLog() {
     return soundLog;
+  }
+
+  /** The voices heard through Simple Voice Chat, or null before the mod finished loading. */
+  public static VoiceLog voiceLog() {
+    return voiceLog;
   }
 
   /** The fight tracker that saves kill and death clips, or null before the game finished starting. */
@@ -163,7 +176,11 @@ public final class ClipsClient implements ClientModInitializer {
 
     SoundLog sounds = new SoundLog();
     sounds.keep(soundWindow(config));
-    created.setAudio(new ClipAudio(sounds, new SoundMixer(file -> Minecraft.getInstance().getResourceManager().open(file)), LOG));
+    VoiceLog voices = new VoiceLog();
+    voices.keep(config.bufferSeconds());
+    voiceLog = voices;
+    created.setAudio(new ClipAudio(sounds, voices, new SoundMixer(file -> Minecraft.getInstance().getResourceManager().open(file)),
+        ClipsClient::settings, LOG));
 
     ClientLifecycleEvents.CLIENT_STARTED.register(client -> {
       recorder = created;
@@ -192,6 +209,7 @@ public final class ClipsClient implements ClientModInitializer {
     ClientTickEvents.END_CLIENT_TICK.register(client -> {
       tracker.tick();
       listen(client, sounds);
+      nameSpeakers(client, voices);
       if (saveKey.pressed()) {
         created.saveClip(saved -> client.execute(() -> announce(client, saved)));
       }
@@ -282,6 +300,20 @@ public final class ClipsClient implements ClientModInitializer {
     SoundManager manager = client.getSoundManager();
     ListenerTransform ear = ((SoundEngineAccessor) ((SoundManagerAccessor) manager).clips$soundEngine()).clips$listener().getTransform();
     sounds.tick(ear.position(), ear.right(), manager::isActive);
+  }
+
+  /** Gives each new voice the speaker's player name, read on the client thread where it is safe. */
+  private static void nameSpeakers(Minecraft client, VoiceLog voices) {
+    ClientPacketListener connection = client.getConnection();
+    if (connection == null) {
+      return;
+    }
+    for (UUID speaker : voices.unnamed()) {
+      PlayerInfo info = connection.getPlayerInfo(speaker);
+      if (info != null) {
+        voices.name(speaker.toString(), info.getProfile().name());
+      }
+    }
   }
 
   /** With Send to Studio on and Studio linked, uploads a new automatic clip with its fight trim. */

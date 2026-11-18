@@ -45,6 +45,7 @@ public final class SoundMixer {
   private static final long CACHE_SAMPLES = 24_000_000L;
   private static final double NANOS = 1_000_000_000.0;
   private static final double HALF_SQRT = Math.sqrt(0.5);
+  private static final float HEADROOM = 0.98f;
 
   private record Pcm(float[] samples, int channels, float rate) {
 
@@ -73,22 +74,51 @@ public final class SoundMixer {
       }
       add(sound, pcm, snapshot.ears(), from, left, right);
     }
+    fitBelowClipping(left, right);
     return new Stereo(left, right);
+  }
+
+  /**
+   * Many loud sounds at once can add up past full scale. Instead of clipping, which crackles, the
+   * whole mix is turned down just enough to fit; quiet clips stay as they are.
+   */
+  private static void fitBelowClipping(float[] left, float[] right) {
+    float peak = 0;
+    for (int i = 0; i < left.length; i++) {
+      peak = Math.max(peak, Math.max(Math.abs(left[i]), Math.abs(right[i])));
+    }
+    if (peak <= HEADROOM) {
+      return;
+    }
+    float scale = HEADROOM / peak;
+    for (int i = 0; i < left.length; i++) {
+      left[i] *= scale;
+      right[i] *= scale;
+    }
   }
 
   /** Writes {@code sound} as a 16-bit stereo WAV file at {@link #RATE}. */
   public static void writeWav(Stereo sound, Path file) throws IOException {
-    int frames = sound.left().length;
+    writeWav(file, sound.left(), sound.right());
+  }
+
+  /** Writes one channel per array, all of the same length, as a 16-bit WAV file at {@link #RATE}. */
+  public static void writeWav(Path file, float[]... channels) throws IOException {
+    int frames = channels[0].length;
+    int count = channels.length;
+    int bytesPerFrame = 2 * count;
     ByteBuffer header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN);
-    header.put("RIFF".getBytes(StandardCharsets.US_ASCII)).putInt(36 + frames * 4)
-        .put("WAVEfmt ".getBytes(StandardCharsets.US_ASCII)).putInt(16).putShort((short) 1).putShort((short) 2)
-        .putInt(RATE).putInt(RATE * 4).putShort((short) 4).putShort((short) 16)
-        .put("data".getBytes(StandardCharsets.US_ASCII)).putInt(frames * 4);
+    header.put("RIFF".getBytes(StandardCharsets.US_ASCII)).putInt(36 + frames * bytesPerFrame)
+        .put("WAVEfmt ".getBytes(StandardCharsets.US_ASCII)).putInt(16).putShort((short) 1).putShort((short) count)
+        .putInt(RATE).putInt(RATE * bytesPerFrame).putShort((short) bytesPerFrame).putShort((short) 16)
+        .put("data".getBytes(StandardCharsets.US_ASCII)).putInt(frames * bytesPerFrame);
     try (OutputStream out = new BufferedOutputStream(Files.newOutputStream(file), 1 << 16)) {
       out.write(header.array());
-      ByteBuffer chunk = ByteBuffer.allocate(4 * 4096).order(ByteOrder.LITTLE_ENDIAN);
+      ByteBuffer chunk = ByteBuffer.allocate(bytesPerFrame * 4096).order(ByteOrder.LITTLE_ENDIAN);
       for (int i = 0; i < frames; i++) {
-        chunk.putShort(toShort(sound.left()[i])).putShort(toShort(sound.right()[i]));
+        for (float[] channel : channels) {
+          chunk.putShort(toShort(channel[i]));
+        }
         if (!chunk.hasRemaining()) {
           out.write(chunk.array(), 0, chunk.position());
           chunk.clear();
