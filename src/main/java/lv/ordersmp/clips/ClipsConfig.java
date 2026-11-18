@@ -26,10 +26,11 @@ import org.slf4j.Logger;
  * @param clipKills save a clip when the player kills another player
  * @param clipDeaths save a clip when the player dies in a fight
  * @param clipLongFights save a clip of a fight of 20 seconds or more that ends without a kill
+ * @param sendToStudio upload new automatic clips to Studio by themselves
  */
 public record ClipsConfig(
     int bufferSeconds, int fps, int maxHeight, int bitrateMbps, String encoder, String ffmpegPath, boolean showHud,
-    String studioUrl, int recordingPartMinutes, Boolean clipKills, Boolean clipDeaths, Boolean clipLongFights) {
+    String studioUrl, int recordingPartMinutes, Boolean clipKills, Boolean clipDeaths, Boolean clipLongFights, Boolean sendToStudio) {
 
   /** The public OrderSMP Studio. */
   public static final String DEFAULT_STUDIO_URL = "https://studio.ordersmp.net";
@@ -38,7 +39,7 @@ public record ClipsConfig(
 
   /** The settings a new player starts with: two minutes at 1080p and 60 frames per second. */
   public static ClipsConfig defaults() {
-    return new ClipsConfig(120, 60, 1080, 0, "", "", true, DEFAULT_STUDIO_URL, 10, true, true, false);
+    return new ClipsConfig(120, 60, 1080, 0, "", "", true, DEFAULT_STUDIO_URL, 10, true, true, false, false);
   }
 
   /** Loads the settings, writing the defaults when the file does not exist yet. */
@@ -85,19 +86,32 @@ public record ClipsConfig(
         recordingPartMinutes == 0 ? 10 : clamp(recordingPartMinutes, 1, 60),
         clipKills == null || clipKills,
         clipDeaths == null || clipDeaths,
-        clipLongFights != null && clipLongFights);
+        clipLongFights != null && clipLongFights,
+        sendToStudio != null && sendToStudio);
   }
 
   /** These settings with other automatic clip choices. */
   public ClipsConfig withClips(boolean kills, boolean deaths, boolean longFights) {
     return new ClipsConfig(bufferSeconds, fps, maxHeight, bitrateMbps, encoder, ffmpegPath, showHud, studioUrl,
-        recordingPartMinutes, kills, deaths, longFights);
+        recordingPartMinutes, kills, deaths, longFights, sendToStudio);
   }
 
   /** These settings with the recording mark shown or hidden. */
   public ClipsConfig withShowHud(boolean show) {
     return new ClipsConfig(bufferSeconds, fps, maxHeight, bitrateMbps, encoder, ffmpegPath, show, studioUrl,
-        recordingPartMinutes, clipKills, clipDeaths, clipLongFights);
+        recordingPartMinutes, clipKills, clipDeaths, clipLongFights, sendToStudio);
+  }
+
+  /** These settings with another quality, frame rate, buffer length and part length. */
+  public ClipsConfig withVideo(int height, int frameRate, int keepSeconds, int partMinutes) {
+    return new ClipsConfig(keepSeconds, frameRate, height, bitrateMbps, encoder, ffmpegPath, showHud, studioUrl,
+        partMinutes, clipKills, clipDeaths, clipLongFights, sendToStudio).sanitized();
+  }
+
+  /** These settings with automatic uploads to Studio turned on or off. */
+  public ClipsConfig withSendToStudio(boolean send) {
+    return new ClipsConfig(bufferSeconds, fps, maxHeight, bitrateMbps, encoder, ffmpegPath, showHud, studioUrl,
+        recordingPartMinutes, clipKills, clipDeaths, clipLongFights, send);
   }
 
   /** Bitrate in bits per second, chosen from the recorded height when the player did not set one. */

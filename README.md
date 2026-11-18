@@ -88,9 +88,10 @@ Clips are saved to `<instance>/clips/` and named by date and time, for example
 Press **J**, or **Esc** and the camera icon next to the other icons in the game menu. The screen
 shows whether recording is on and lists your clips, newest first, with a thumbnail, their length
 and size. Select a clip and press **Watch and Edit** (or double-click it) to open the editor, open
-**Upload to Studio**, or delete a clip. **Options** turns clipping on or off, starts Recording mode,
-chooses which moments save themselves (kills, deaths, long fights without a kill), opens the clips
-folder and shows or hides the recording mark. Each clip shows its type (sword, skull, crossed
+**Upload to Studio**, or delete a clip. **Options** has a quick page (quality, how much to keep,
+Auto Clip, clipping on or off, Recording mode, Studio, key binds) and an **Advanced** page with
+every setting (frame rate, recording parts, which moments save themselves, the recording mark,
+storage). Changes apply at once; a new quality, frame rate or Keep Last starts the buffer again. Each clip shows its type (sword, skull, crossed
 swords, film strip) and whether it is in Studio.
 
 ### The editor
@@ -161,7 +162,8 @@ Settings live in `<instance>/config/ordersmp-clips.json`, created on first start
   "recordingPartMinutes": 10,
   "clipKills": true,
   "clipDeaths": true,
-  "clipLongFights": false
+  "clipLongFights": false,
+  "sendToStudio": false
 }
 ```
 
@@ -175,6 +177,7 @@ Settings live in `<instance>/config/ordersmp-clips.json`, created on first start
 | `ffmpegPath` | Full path to FFmpeg; empty searches the mod folder and `PATH` |
 | `showHud` | Show the recording mark |
 | `studioUrl` | The OrderSMP Studio that **Upload to Studio** sends clips to |
+| `sendToStudio` | Upload new automatic clips to Studio by themselves (off by default) |
 | `recordingPartMinutes` | Length of each file Recording mode writes (1 to 60 minutes) |
 | `clipKills`, `clipDeaths`, `clipLongFights` | Which moments save themselves (also in **Options**) |
 

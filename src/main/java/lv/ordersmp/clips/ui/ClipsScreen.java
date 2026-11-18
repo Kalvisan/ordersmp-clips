@@ -23,6 +23,7 @@ import lv.ordersmp.clips.ClipsClient;
 import lv.ordersmp.clips.Recorder;
 import lv.ordersmp.clips.edit.ClipEdit;
 import lv.ordersmp.clips.studio.Studio;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
@@ -206,7 +207,7 @@ public final class ClipsScreen extends Screen {
     if (watchButton != null) {
       watchButton.active = selected;
       deleteButton.active = selected;
-      uploadButton.active = selected;
+      refreshUploadButton();
     }
     statusColor = GRAY;
     status = switch (recorder.state()) {
@@ -239,6 +240,34 @@ public final class ClipsScreen extends Screen {
     minecraft.gui.setScreen(new EditorScreen(this, recorder, clip));
   }
 
+  /**
+   * The upload button follows the selected clip: Upload to Studio, Uploading with percent and Retry
+   * Upload, or In Studio, which needs no button and is shown disabled.
+   */
+  private void refreshUploadButton() {
+    ClipEntry entry = list.getSelected();
+    if (entry == null) {
+      uploadButton.active = false;
+      uploadButton.setMessage(Component.translatable("ordersmp-clips.editor.studio"));
+      return;
+    }
+    Studio studio = ClipsClient.studio();
+    Studio.Job job = studio.job(entry.clip.file());
+    if (job != null && (job.phase() == Studio.Phase.PREPARING || job.phase() == Studio.Phase.UPLOADING)) {
+      uploadButton.active = false;
+      uploadButton.setMessage(Component.translatable("ordersmp-clips.screen.uploading", (int) Math.floor(job.progress() * 100)));
+      return;
+    }
+    if (job != null && job.phase() == Studio.Phase.FAILED) {
+      uploadButton.active = true;
+      uploadButton.setMessage(Component.translatable("ordersmp-clips.screen.retry").withStyle(ChatFormatting.YELLOW));
+      return;
+    }
+    boolean inStudio = studio.uploadedUrl(entry.clip.file()) != null;
+    uploadButton.active = !inStudio;
+    uploadButton.setMessage(Component.translatable(inStudio ? "ordersmp-clips.screen.in_studio" : "ordersmp-clips.editor.studio"));
+  }
+
   /** Uploads the selected clip with its kept edit and title, linking Studio first when needed. */
   private void uploadSelected() {
     ClipEntry entry = list.getSelected();
@@ -261,14 +290,14 @@ public final class ClipsScreen extends Screen {
   }
 
   /** A title made from the clip, such as {@code Kill - Raven_77, 18 Nov 21:14}. */
-  static String generatedTitle(ClipLibrary.Clip clip) {
+  public static String generatedTitle(ClipLibrary.Clip clip) {
     String when = TITLE_TIME.format(LocalDateTime.ofInstant(clip.saved(), ZoneId.systemDefault()));
     boolean fight = MOMENT.matcher(ClipLibrary.stem(clip.file())).find();
     return fight ? name(clip).getString() + ", " + when : "Minecraft clip, " + when;
   }
 
   /** Opens the clips folder in the system's file browser. */
-  static void openFolder(Path folder) {
+  public static void openFolder(Path folder) {
     try {
       Files.createDirectories(folder);
     } catch (IOException e) {

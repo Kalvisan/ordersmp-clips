@@ -1,6 +1,7 @@
 package lv.ordersmp.clips;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.function.UnaryOperator;
 import java.io.IOException;
@@ -69,6 +70,9 @@ public final class ClipsClient implements ClientModInitializer {
     }
     if (mark != null) {
       mark.setVisible(settings.showHud());
+    }
+    if (recorder != null) {
+      recorder.reconfigure(settings);
     }
   }
 
@@ -240,9 +244,24 @@ public final class ClipsClient implements ClientModInitializer {
         saved -> {
           if (saved.file() != null) {
             keepFightTrim(saved.file(), moment, after);
+            sendIfWanted(recorder, saved.file());
           }
           Minecraft.getInstance().execute(() -> announceMoment(moment, saved));
         });
+  }
+
+  /** With Send to Studio on and Studio linked, uploads a new automatic clip with its fight trim. */
+  private static void sendIfWanted(Recorder recorder, Path file) {
+    if (!settings.sendToStudio() || studio == null || !studio.isLinked()) {
+      return;
+    }
+    try {
+      ClipLibrary.Clip clip = new ClipLibrary.Clip(file, Files.getLastModifiedTime(file).toInstant(), Files.size(file), ClipLibrary.length(file));
+      ClipEdit edit = ClipEdit.load(file, clip.seconds());
+      studio.upload(clip, edit, ClipsScreen.generatedTitle(clip), recorder, ClipsClient::announceUpload);
+    } catch (IOException e) {
+      LOG.warn("Could not send {} to Studio", file.getFileName(), e);
+    }
   }
 
   /**

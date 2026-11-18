@@ -51,11 +51,11 @@ public final class Recorder {
 
   private static final long SAVE_COOLDOWN_NANOS = 2_000_000_000L;
 
-  private final ClipsConfig config;
+  private volatile ClipsConfig config;
   private final Logger log;
   private final Path clipsFolder;
   private final FrameCapture capture = new FrameCapture();
-  private final PacketRing ring;
+  private volatile PacketRing ring;
   private final ExecutorService saver = Executors.newSingleThreadExecutor(r -> Thread.ofPlatform().daemon().name("Clips saver").unstarted(r));
   private volatile EncoderProbe.Result probe;
   private volatile VideoEncoder encoder;
@@ -74,9 +74,30 @@ public final class Recorder {
     this.config = config;
     this.clipsFolder = clipsFolder;
     this.log = log;
+    this.ring = ringFor(config);
+  }
+
+  /**
+   * Applies changed settings at once. A new quality, frame rate or buffer length needs a new
+   * buffer and encoder, so the minutes held so far are dropped; Recording mode keeps going.
+   */
+  public void reconfigure(ClipsConfig next) {
+    ClipsConfig before = config;
+    config = next;
+    if (before.bufferSeconds() == next.bufferSeconds() && before.fps() == next.fps() && before.maxHeight() == next.maxHeight()) {
+      return;
+    }
+    stopEncoder();
+    PacketRing fresh = ringFor(next);
+    fresh.tap(session);
+    ring = fresh;
+    nextCaptureNanos = 0;
+  }
+
+  private static PacketRing ringFor(ClipsConfig config) {
     int frames = config.bufferSeconds() * config.fps();
     long bytes = (long) config.bitrateFor(config.maxHeight()) * 3 / 2 / 8 * (config.bufferSeconds() + 5);
-    this.ring = new PacketRing((int) Math.min(Integer.MAX_VALUE - 8, bytes), frames);
+    return new PacketRing((int) Math.min(Integer.MAX_VALUE - 8, bytes), frames);
   }
 
   /** Looks for ffmpeg and a working encoder in the background; recording starts when it is done. */
