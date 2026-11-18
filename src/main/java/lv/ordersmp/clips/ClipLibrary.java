@@ -19,7 +19,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
-import net.minecraft.util.Util;
 
 /**
  * The saved clips on disk. Clips are plain MP4 files in the clips folder, so the folder itself is
@@ -173,7 +172,7 @@ public final class ClipLibrary {
    */
   public static Path importFile(Path source, Path folder) throws IOException {
     Files.createDirectories(folder);
-    String name = Util.sanitizeName(stem(source), character -> Character.isLetterOrDigit(character) || character == '-' || character == '_');
+    String name = stem(source).replaceAll("[^A-Za-z0-9_-]", "_");
     Path target = folder.resolve(name + ".mp4");
     for (int n = 2; Files.exists(target); n++) {
       target = folder.resolve(name + "-" + n + ".mp4");

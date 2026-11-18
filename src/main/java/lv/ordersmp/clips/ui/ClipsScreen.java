@@ -106,7 +106,7 @@ public final class ClipsScreen extends Screen {
   private static final int THUMB_WIDTH = 56;
   private static final int THUMB_HEIGHT = 32;
   private static final int FOLDER_CHECK_TICKS = 20;
-  private static final Pattern MOMENT = Pattern.compile("_(kill|death|fight)-([A-Za-z0-9_]{1,16})$");
+  private static final Pattern MOMENT = Pattern.compile("_(kill|death|fight)-([A-Za-z0-9_]{1,16})(?:-edit(?:-[0-9]+)?)?$");
   private static final Pattern PART = Pattern.compile("-part([0-9]+)$");
   private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm", Locale.ROOT);
   private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("d MMM", Locale.ENGLISH);
@@ -324,6 +324,19 @@ public final class ClipsScreen extends Screen {
       list.fill();
     }
     refresh();
+  }
+
+  /**
+   * Coming back from the editor, a confirm screen or Options does not build the screen again, so
+   * the clips and thumbnails released when it was left are read again here.
+   */
+  @Override
+  public void added() {
+    super.added();
+    if (list != null && clips == null) {
+      reload();
+      list.fill();
+    }
   }
 
   @Override
