@@ -1,8 +1,12 @@
 package lv.ordersmp.clips.ui;
 
+import java.util.List;
+import java.util.Locale;
 import java.util.function.DoubleConsumer;
 import java.util.function.DoubleSupplier;
 import lv.ordersmp.clips.ClipLibrary;
+import lv.ordersmp.clips.ClipsClient;
+import lv.ordersmp.clips.fight.ClipEvents;
 import lv.ordersmp.clips.edit.ClipEdit;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -23,6 +27,9 @@ import net.minecraft.resources.Identifier;
 public final class TimelineWidget extends AbstractWidget {
 
   private static final Identifier HANDLE = Identifier.withDefaultNamespace("widget/slider_handle");
+  private static final Identifier FIGHT_MARKER = Identifier.fromNamespaceAndPath(ClipsClient.MOD_ID, "hud/fight");
+  private static final Identifier KILL_MARKER = Identifier.fromNamespaceAndPath(ClipsClient.MOD_ID, "hud/sword");
+  private static final Identifier DEATH_MARKER = Identifier.fromNamespaceAndPath(ClipsClient.MOD_ID, "hud/skull");
   private static final Identifier HANDLE_HIGHLIGHTED = Identifier.withDefaultNamespace("widget/slider_handle_highlighted");
   private static final int LABEL_WIDTH = 44;
   private static final int RULER_HEIGHT = 11;
@@ -36,6 +43,8 @@ public final class TimelineWidget extends AbstractWidget {
   private static final int PLAYHEAD = 0xFFFFFFFF;
   private static final int GRAY = 0xFFA0A0A0;
   private static final int WHITE = 0xFFFFFFFF;
+  private static final int ORANGE = 0xFFFFAA00;
+  private static final int MARKER_SIZE = 9;
 
   private enum Drag { NONE, PLAYHEAD, START, END }
 
@@ -44,6 +53,7 @@ public final class TimelineWidget extends AbstractWidget {
   private final DoubleConsumer seek;
   private final Runnable changed;
   private Identifier filmstrip;
+  private List<ClipEvents.Event> events = List.of();
   private Drag drag = Drag.NONE;
 
   public TimelineWidget(int x, int y, int width, int height, ClipEdit edit, DoubleSupplier playhead,
@@ -53,6 +63,11 @@ public final class TimelineWidget extends AbstractWidget {
     this.playhead = playhead;
     this.seek = seek;
     this.changed = changed;
+  }
+
+  /** Marks the clip's moments (first hit, kills, death) with an orange line and an icon. */
+  public void setEvents(List<ClipEvents.Event> events) {
+    this.events = events;
   }
 
   /** Shows the clip's filmstrip in the video lane once it is loaded. */
@@ -93,6 +108,8 @@ public final class TimelineWidget extends AbstractWidget {
       graphics.fill(x, laneY, x + 1, laneBottom, CUT);
     }
 
+    drawEvents(graphics, font, laneY, laneBottom, mouseX, mouseY);
+
     boolean overStart = drag == Drag.START || near(mouseX, mouseY, edit.start());
     boolean overEnd = drag == Drag.END || near(mouseX, mouseY, edit.end());
     graphics.blitSprite(RenderPipelines.GUI_TEXTURED, overStart ? HANDLE_HIGHLIGHTED : HANDLE,
@@ -102,6 +119,30 @@ public final class TimelineWidget extends AbstractWidget {
 
     int head = toX(playhead.getAsDouble());
     graphics.fill(head, getY() + RULER_HEIGHT - 2, head + 1, laneBottom, PLAYHEAD);
+  }
+
+  /** An orange line through the lanes at each moment, its icon on the ruler, and a tooltip naming it. */
+  private void drawEvents(GuiGraphicsExtractor graphics, Font font, int laneY, int laneBottom, int mouseX, int mouseY) {
+    for (ClipEvents.Event event : events) {
+      int x = toX(event.time());
+      graphics.fill(x, laneY, x + 1, laneBottom, ORANGE);
+      int iconX = x - MARKER_SIZE / 2;
+      int iconY = getY() + 1;
+      graphics.blitSprite(RenderPipelines.GUI_TEXTURED, markerIcon(event.type()), iconX, iconY, MARKER_SIZE, MARKER_SIZE);
+      boolean over = mouseX >= iconX && mouseX < iconX + MARKER_SIZE && mouseY >= iconY && mouseY < iconY + MARKER_SIZE;
+      if (over) {
+        graphics.setTooltipForNextFrame(Component.translatable("ordersmp-clips.editor.marker." + event.type().name().toLowerCase(Locale.ROOT),
+            String.valueOf(event.name()), ClipsScreen.duration((int) event.time())), mouseX, mouseY);
+      }
+    }
+  }
+
+  private static Identifier markerIcon(ClipEvents.Type type) {
+    return switch (type) {
+      case FIRST_HIT -> FIGHT_MARKER;
+      case KILL -> KILL_MARKER;
+      case DEATH -> DEATH_MARKER;
+    };
   }
 
   /**

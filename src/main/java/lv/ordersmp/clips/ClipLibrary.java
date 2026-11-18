@@ -45,6 +45,8 @@ public final class ClipLibrary {
   private static final int FFMPEG_TIMEOUT_SECONDS = 60;
   private static final String THUMBNAIL_FOLDER = ".thumbnails";
   private static final String EDIT_FOLDER = ".edits";
+  private static final String EVENT_FOLDER = ".events";
+  private static final String STUDIO_FOLDER = ".studio";
 
   private ClipLibrary() {}
 
@@ -69,6 +71,18 @@ public final class ClipLibrary {
     Files.deleteIfExists(thumbnailFile(clip.file()));
     Files.deleteIfExists(filmstripFile(clip.file()));
     Files.deleteIfExists(editFile(clip.file()));
+    Files.deleteIfExists(eventsFile(clip.file()));
+    Files.deleteIfExists(studioFile(clip.file()));
+  }
+
+  /** Where the address of the clip's Studio copy is kept once it was uploaded. */
+  public static Path studioFile(Path clip) {
+    return beside(clip, STUDIO_FOLDER, ".txt");
+  }
+
+  /** Where the moments inside an automatic clip are kept, for the editor's timeline markers. */
+  public static Path eventsFile(Path clip) {
+    return beside(clip, EVENT_FOLDER, ".json");
   }
 
   /** Where the thumbnail of {@code clip} is kept: a hidden folder beside the clips. */

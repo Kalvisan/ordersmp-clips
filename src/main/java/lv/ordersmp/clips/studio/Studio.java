@@ -175,6 +175,20 @@ public final class Studio {
     return job;
   }
 
+  /** The Studio address of {@code clip} from an earlier upload, or null. */
+  public String uploadedUrl(Path clip) {
+    Job running = jobs.get(clip);
+    if (running != null && running.url != null) {
+      return running.url;
+    }
+    try {
+      Path file = ClipLibrary.studioFile(clip);
+      return Files.isRegularFile(file) ? Files.readString(file, StandardCharsets.UTF_8).strip() : null;
+    } catch (IOException e) {
+      return null;
+    }
+  }
+
   /** Stops uploading when the game closes; an unfinished upload is simply started again later. */
   public void shutdown() {
     uploader.shutdownNow();
@@ -202,6 +216,7 @@ public final class Studio {
         file = temporary;
       }
       send(job, current, file, title);
+      rememberUpload(job);
     } catch (IOException e) {
       fail(job, "The clip could not be read.");
     } finally {
@@ -292,6 +307,20 @@ public final class Studio {
       return call.run();
     } catch (StudioClient.StudioException e) {
       throw new CompletionException(e);
+    }
+  }
+
+  /** Keeps the Studio address beside the clip, so the clip shows as in Studio after a restart. */
+  private void rememberUpload(Job job) {
+    if (job.phase != Phase.DONE || job.url == null) {
+      return;
+    }
+    try {
+      Path file = ClipLibrary.studioFile(job.clip);
+      Files.createDirectories(file.getParent());
+      Files.writeString(file, job.url, StandardCharsets.UTF_8);
+    } catch (IOException e) {
+      log.warn("Could not remember the Studio address of {}", job.clip.getFileName(), e);
     }
   }
 

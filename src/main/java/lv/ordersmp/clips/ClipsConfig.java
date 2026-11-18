@@ -23,16 +23,13 @@ import org.slf4j.Logger;
  * @param showHud whether the recording mark is drawn
  * @param studioUrl address of the OrderSMP Studio that clips upload to
  * @param recordingPartMinutes length of each file Recording mode writes
- * @param autoClips which fights save themselves: {@code kills_and_deaths}, {@code kills} or {@code off}
+ * @param clipKills save a clip when the player kills another player
+ * @param clipDeaths save a clip when the player dies in a fight
+ * @param clipLongFights save a clip of a fight of 20 seconds or more that ends without a kill
  */
 public record ClipsConfig(
     int bufferSeconds, int fps, int maxHeight, int bitrateMbps, String encoder, String ffmpegPath, boolean showHud,
-    String studioUrl, int recordingPartMinutes, String autoClips) {
-
-  /** Automatic clip settings. */
-  public static final String AUTO_KILLS_AND_DEATHS = "kills_and_deaths";
-  public static final String AUTO_KILLS = "kills";
-  public static final String AUTO_OFF = "off";
+    String studioUrl, int recordingPartMinutes, Boolean clipKills, Boolean clipDeaths, Boolean clipLongFights) {
 
   /** The public OrderSMP Studio. */
   public static final String DEFAULT_STUDIO_URL = "https://studio.ordersmp.net";
@@ -41,7 +38,7 @@ public record ClipsConfig(
 
   /** The settings a new player starts with: two minutes at 1080p and 60 frames per second. */
   public static ClipsConfig defaults() {
-    return new ClipsConfig(120, 60, 1080, 0, "", "", true, DEFAULT_STUDIO_URL, 10, AUTO_KILLS_AND_DEATHS);
+    return new ClipsConfig(120, 60, 1080, 0, "", "", true, DEFAULT_STUDIO_URL, 10, true, true, false);
   }
 
   /** Loads the settings, writing the defaults when the file does not exist yet. */
@@ -86,7 +83,21 @@ public record ClipsConfig(
         showHud,
         studioUrl(studioUrl),
         recordingPartMinutes == 0 ? 10 : clamp(recordingPartMinutes, 1, 60),
-        AUTO_KILLS.equals(autoClips) || AUTO_OFF.equals(autoClips) ? autoClips : AUTO_KILLS_AND_DEATHS);
+        clipKills == null || clipKills,
+        clipDeaths == null || clipDeaths,
+        clipLongFights != null && clipLongFights);
+  }
+
+  /** These settings with other automatic clip choices. */
+  public ClipsConfig withClips(boolean kills, boolean deaths, boolean longFights) {
+    return new ClipsConfig(bufferSeconds, fps, maxHeight, bitrateMbps, encoder, ffmpegPath, showHud, studioUrl,
+        recordingPartMinutes, kills, deaths, longFights);
+  }
+
+  /** These settings with the recording mark shown or hidden. */
+  public ClipsConfig withShowHud(boolean show) {
+    return new ClipsConfig(bufferSeconds, fps, maxHeight, bitrateMbps, encoder, ffmpegPath, show, studioUrl,
+        recordingPartMinutes, clipKills, clipDeaths, clipLongFights);
   }
 
   /** Bitrate in bits per second, chosen from the recorded height when the player did not set one. */

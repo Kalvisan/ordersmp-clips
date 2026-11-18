@@ -88,8 +88,10 @@ Clips are saved to `<instance>/clips/` and named by date and time, for example
 Press **J**, or **Esc** and the camera icon next to the other icons in the game menu. The screen
 shows whether recording is on and lists your clips, newest first, with a thumbnail, their length
 and size. Select a clip and press **Watch and Edit** (or double-click it) to open the editor, open
-the clips folder, or delete a clip. In the top left corner, the dot pauses and resumes clipping and
-the camera starts and stops Recording mode.
+**Upload to Studio**, or delete a clip. **Options** turns clipping on or off, starts Recording mode,
+chooses which moments save themselves (kills, deaths, long fights without a kill), opens the clips
+folder and shows or hides the recording mark. Each clip shows its type (sword, skull, crossed
+swords, film strip) and whether it is in Studio.
 
 ### The editor
 
@@ -99,6 +101,8 @@ The editor plays the clip in game and keeps editing to the basics:
   second.
 - **Trim:** set where the clip starts and ends with the sliders or by dragging the handles on the
   timeline.
+- **Timeline markers:** an orange line with an icon marks the first hit, each kill and your death
+  in automatic clips.
 - **Cut Here** puts a cut at the playhead; **Remove Part** leaves out the part between two cuts
   (striped on the timeline) and **Keep Part** brings it back. **Reset All** undoes everything.
 - **Done** keeps your edits next to the clip; the video file itself is never changed.
@@ -155,7 +159,9 @@ Settings live in `<instance>/config/ordersmp-clips.json`, created on first start
   "showHud": true,
   "studioUrl": "https://studio.ordersmp.net",
   "recordingPartMinutes": 10,
-  "autoClips": "kills_and_deaths"
+  "clipKills": true,
+  "clipDeaths": true,
+  "clipLongFights": false
 }
 ```
 
@@ -170,7 +176,7 @@ Settings live in `<instance>/config/ordersmp-clips.json`, created on first start
 | `showHud` | Show the recording mark |
 | `studioUrl` | The OrderSMP Studio that **Upload to Studio** sends clips to |
 | `recordingPartMinutes` | Length of each file Recording mode writes (1 to 60 minutes) |
-| `autoClips` | Automatic clips: `kills_and_deaths`, `kills` or `off` |
+| `clipKills`, `clipDeaths`, `clipLongFights` | Which moments save themselves (also in **Options**) |
 
 Memory use is roughly bitrate times buffer length: 2 minutes at 10 Mbps is about 150 MB.
 

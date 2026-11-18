@@ -1,6 +1,8 @@
 package lv.ordersmp.clips.fight;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
@@ -16,7 +18,7 @@ import java.util.function.LongSupplier;
 public final class FightTracker {
 
   /** What a clip shows. */
-  public enum Kind { KILL, DEATH }
+  public enum Kind { KILL, DEATH, FIGHT }
 
   /**
    * A finished fight to save.
@@ -26,8 +28,20 @@ public final class FightTracker {
    * @param kills how many players the player killed in it
    * @param seconds clip length
    * @param skipSeconds how long ago the clip ends
+   * @param events what happened, each timed in seconds before the clip's end
    */
-  public record Moment(Kind kind, String opponent, int kills, int seconds, int skipSeconds) {}
+  public record Moment(Kind kind, String opponent, int kills, int seconds, int skipSeconds, List<Mark> events) {}
+
+  /**
+   * One moment in a fight.
+   *
+   * @param type what happened
+   * @param secondsBeforeEnd how long before the clip's end it happened
+   * @param name the other player
+   */
+  public record Mark(ClipEvents.Type type, double secondsBeforeEnd, String name) {}
+
+  private record Happened(ClipEvents.Type type, long at, String name) {}
 
   private record Opponent(String name, long lastHit) {}
 
@@ -38,6 +52,7 @@ public final class FightTracker {
   private static final long KILL_CREDIT = 10 * SECOND;
   private static final long MERGE_KILLS = 15 * SECOND;
   private static final long DEATH_TAIL = 10 * SECOND;
+  private static final long LONG_FIGHT = 20 * SECOND;
   private static final int MIN_SECONDS = 10;
   private static final int MAX_SECONDS = 300;
 
@@ -51,8 +66,10 @@ public final class FightTracker {
   private String opponent;
   private int kills;
   private boolean died;
+  private final List<Happened> happened = new ArrayList<>();
   private boolean killsOn = true;
   private boolean deathsOn = true;
+  private boolean longFightsOn;
 
   /**
    * @param clock current time in nanoseconds
@@ -63,10 +80,11 @@ public final class FightTracker {
     this.save = save;
   }
 
-  /** Which fights become clips; both off stops automatic clips. */
-  public void configure(boolean kills, boolean deaths) {
+  /** Which fights become clips; all off stops automatic clips. */
+  public void configure(boolean kills, boolean deaths, boolean longFights) {
     this.killsOn = kills;
     this.deathsOn = deaths;
+    this.longFightsOn = longFights;
   }
 
   /** Seconds since the fight began, or -1 when no fight is being followed. */
@@ -81,13 +99,14 @@ public final class FightTracker {
 
   /** The player hit another player, or the other player hit the player. */
   public void hit(int playerId, String name) {
-    if (!killsOn && !deathsOn) {
+    if (!killsOn && !deathsOn && !longFightsOn) {
       return;
     }
     long now = clock.getAsLong();
     if (fightStart == 0 || (lastMoment == 0 && now - lastHit > FIGHT_ENDS)) {
       reset();
       fightStart = now;
+      happened.add(new Happened(ClipEvents.Type.FIRST_HIT, now, name));
     }
     lastHit = now;
     opponents.put(playerId, new Opponent(name, now));
@@ -104,6 +123,7 @@ public final class FightTracker {
     kind = Kind.KILL;
     opponent = victim.name();
     lastMoment = now;
+    happened.add(new Happened(ClipEvents.Type.KILL, now, victim.name()));
   }
 
   /** The player died; {@code killer} is the last player who hit them, or null. */
@@ -112,31 +132,47 @@ public final class FightTracker {
     if (fightStart == 0 || now - lastHit > FIGHT_ENDS || (!deathsOn && kills == 0)) {
       return;
     }
+    String by = killer == null ? lastOpponent() : killer;
     if (kind == null) {
       kind = Kind.DEATH;
-      opponent = killer == null ? lastOpponent() : killer;
+      opponent = by;
     }
     died = true;
     lastMoment = now;
+    happened.add(new Happened(ClipEvents.Type.DEATH, now, by));
   }
 
   /** Called every client tick: saves a fight once no further kill can join it. */
   public void tick() {
     if (lastMoment == 0) {
-      if (fightStart != 0 && clock.getAsLong() - lastHit > FIGHT_ENDS) {
-        reset();
+      long now = clock.getAsLong();
+      if (fightStart == 0 || now - lastHit <= FIGHT_ENDS) {
+        return;
       }
+      if (longFightsOn && lastHit - fightStart >= LONG_FIGHT) {
+        kind = Kind.FIGHT;
+        opponent = lastOpponent();
+        save(now, lastHit + FOLLOW_UP);
+        return;
+      }
+      reset();
       return;
     }
     long now = clock.getAsLong();
     if (died ? now - lastMoment < FOLLOW_UP + DEATH_TAIL : now - lastMoment < MERGE_KILLS || now - lastHit < FIGHT_ENDS) {
       return;
     }
-    long end = (died ? lastMoment : Math.max(lastMoment, lastHit)) + FOLLOW_UP;
+    save(now, (died ? lastMoment : Math.max(lastMoment, lastHit)) + FOLLOW_UP);
+  }
+
+  private void save(long now, long end) {
     long start = fightStart - LEAD_IN;
     int seconds = (int) Math.max(MIN_SECONDS, Math.min(MAX_SECONDS, (end - start + SECOND - 1) / SECOND));
     int skip = (int) Math.max(0, (now - end) / SECOND);
-    Moment moment = new Moment(kind, opponent == null ? "?" : opponent, kills, seconds, skip);
+    List<Mark> marks = happened.stream()
+        .map(event -> new Mark(event.type(), (end - event.at()) / (double) SECOND, event.name()))
+        .toList();
+    Moment moment = new Moment(kind, opponent == null ? "?" : opponent, kills, seconds, skip, marks);
     reset();
     save.accept(moment);
   }
@@ -147,6 +183,7 @@ public final class FightTracker {
 
   private void reset() {
     opponents.clear();
+    happened.clear();
     fightStart = 0;
     lastHit = 0;
     lastMoment = 0;

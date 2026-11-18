@@ -21,6 +21,8 @@ import java.util.regex.Pattern;
 import lv.ordersmp.clips.ClipLibrary;
 import lv.ordersmp.clips.ClipsClient;
 import lv.ordersmp.clips.Recorder;
+import lv.ordersmp.clips.edit.ClipEdit;
+import lv.ordersmp.clips.studio.Studio;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
@@ -38,8 +40,6 @@ import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.util.Util;
 
 /**
@@ -50,12 +50,20 @@ import net.minecraft.util.Util;
 public final class ClipsScreen extends Screen {
 
   private static final Identifier PLAY = sprite("icon/play");
-  private static final Identifier FOLDER = sprite("icon/folder");
   private static final Identifier TRASH = sprite("icon/trash");
   private static final Identifier CLIP = sprite("pause_menu/clips");
   private static final Identifier REC = sprite("icon/rec");
-  private static final Identifier REC_OFF = sprite("icon/rec_off");
-  private static final Identifier FILM_STOP = sprite("icon/stop");
+  private static final Identifier UPLOAD = sprite("icon/upload");
+  private static final Identifier GEAR = sprite("icon/gear");
+  private static final Identifier SWORD = sprite("hud/sword");
+  private static final Identifier SKULL = sprite("hud/skull");
+  private static final Identifier FIGHT = sprite("hud/fight");
+  private static final Identifier FILM = sprite("hud/clip");
+  private static final Identifier CHECK = sprite("hud/check");
+  private static final Identifier CROSS = sprite("hud/cross");
+  private static final int GREEN = 0xFF55FF55;
+  private static final int AQUA = 0xFF55FFFF;
+  private static final DateTimeFormatter TITLE_TIME = DateTimeFormatter.ofPattern("d MMM HH:mm", Locale.ENGLISH);
   private static final int WHITE = 0xFFFFFFFF;
   private static final int GRAY = 0xFFA0A0A0;
   private static final int DARK_GRAY = 0xFF808080;
@@ -64,7 +72,7 @@ public final class ClipsScreen extends Screen {
   private static final int THUMB_WIDTH = 56;
   private static final int THUMB_HEIGHT = 32;
   private static final int FOLDER_CHECK_TICKS = 20;
-  private static final Pattern MOMENT = Pattern.compile("_(kill|death)-([A-Za-z0-9_]{1,16})$");
+  private static final Pattern MOMENT = Pattern.compile("_(kill|death|fight)-([A-Za-z0-9_]{1,16})$");
   private static final Pattern PART = Pattern.compile("-part([0-9]+)$");
   private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm", Locale.ROOT);
   private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("d MMM", Locale.ENGLISH);
@@ -78,8 +86,7 @@ public final class ClipsScreen extends Screen {
   private StringWidget titleWidget;
   private Button watchButton;
   private Button deleteButton;
-  private boolean toggleShowsPaused;
-  private boolean buttonShowsRecording;
+  private Button uploadButton;
   private Component status = Component.empty();
   private int statusColor = GRAY;
   private Component summary = Component.empty();
@@ -112,15 +119,15 @@ public final class ClipsScreen extends Screen {
     LinearLayout footer = layout.addToFooter(LinearLayout.vertical().spacing(4));
     footer.defaultCellSetting().alignHorizontallyCenter();
     LinearLayout top = footer.addChild(LinearLayout.horizontal().spacing(8));
-    watchButton = top.addChild(iconButton("ordersmp-clips.screen.watch", PLAY, 150, button -> editSelected()));
-    top.addChild(iconButton("ordersmp-clips.screen.folder", FOLDER, 150, button -> openFolder()));
+    watchButton = top.addChild(iconButton("ordersmp-clips.screen.watch", PLAY, 151, button -> editSelected()));
+    uploadButton = top.addChild(iconButton("ordersmp-clips.editor.studio", UPLOAD, 151, button -> uploadSelected()));
     LinearLayout bottom = footer.addChild(LinearLayout.horizontal().spacing(8));
-    deleteButton = bottom.addChild(iconButton("ordersmp-clips.screen.delete", TRASH, 150, button -> confirmDelete()));
-    bottom.addChild(Button.builder(CommonComponents.GUI_DONE, button -> onClose()).width(150).build());
+    deleteButton = bottom.addChild(iconButton("ordersmp-clips.screen.delete", TRASH, 98, button -> confirmDelete()));
+    bottom.addChild(iconButton("ordersmp-clips.screen.options", GEAR, 98,
+        button -> minecraft.gui.setScreen(new ClipsOptionsScreen(this, recorder))));
+    bottom.addChild(Button.builder(CommonComponents.GUI_DONE, button -> onClose()).width(98).build());
 
     layout.visitWidgets(this::addRenderableWidget);
-    addRenderableWidget(recordToggle());
-    addRenderableWidget(sessionButton());
     repositionElements();
     list.fill();
     refresh();
@@ -199,11 +206,7 @@ public final class ClipsScreen extends Screen {
     if (watchButton != null) {
       watchButton.active = selected;
       deleteButton.active = selected;
-    }
-    if (watchButton != null && (toggleShowsPaused != (recorder.state() == Recorder.State.PAUSED)
-        || buttonShowsRecording != recorder.isRecordingSession())) {
-      rebuildWidgets();
-      return;
+      uploadButton.active = selected;
     }
     statusColor = GRAY;
     status = switch (recorder.state()) {
@@ -218,46 +221,6 @@ public final class ClipsScreen extends Screen {
         yield Component.translatable("ordersmp-clips.screen.status.problem", String.valueOf(recorder.problem()));
       }
     };
-  }
-
-  /**
-   * The Recording mode button beside the record switch: starts writing everything to disk, or
-   * stops it. Its tooltip says which, and the header shows how long it has run.
-   */
-  private SpriteIconButton sessionButton() {
-    buttonShowsRecording = recorder.isRecordingSession();
-    String key = buttonShowsRecording ? "ordersmp-clips.screen.session.stop" : "ordersmp-clips.screen.session.start";
-    SpriteIconButton button = SpriteIconButton.builder(Component.translatable(key), pressed -> {
-          ClipsClient.toggleRecording(minecraft);
-          rebuildWidgets();
-        }, true)
-        .width(20)
-        .sprite(buttonShowsRecording ? FILM_STOP : CLIP, buttonShowsRecording ? 12 : 15, buttonShowsRecording ? 12 : 15)
-        .withTootip()
-        .build();
-    button.setPosition(30, 8);
-    button.active = recorder.state() == Recorder.State.RECORDING || recorder.state() == Recorder.State.SAVING || buttonShowsRecording;
-    return button;
-  }
-
-  /**
-   * The record switch in the top left corner: a red dot while recording, a hollow dot while paused.
-   * Its look follows the recorder, so pausing with the key updates it too.
-   */
-  private SpriteIconButton recordToggle() {
-    toggleShowsPaused = recorder.state() == Recorder.State.PAUSED;
-    String key = toggleShowsPaused ? "ordersmp-clips.screen.resume" : "ordersmp-clips.screen.pause";
-    SpriteIconButton toggle = SpriteIconButton.builder(Component.translatable(key), button -> {
-          recorder.togglePause();
-          rebuildWidgets();
-        }, true)
-        .width(20)
-        .sprite(toggleShowsPaused ? REC_OFF : REC, 12, 12)
-        .withTootip()
-        .build();
-    toggle.setPosition(8, 8);
-    toggle.active = recorder.state() != Recorder.State.PROBLEM && recorder.state() != Recorder.State.STARTING;
-    return toggle;
   }
 
   private void editSelected() {
@@ -276,14 +239,43 @@ public final class ClipsScreen extends Screen {
     minecraft.gui.setScreen(new EditorScreen(this, recorder, clip));
   }
 
-  private void openFolder() {
+  /** Uploads the selected clip with its kept edit and title, linking Studio first when needed. */
+  private void uploadSelected() {
+    ClipEntry entry = list.getSelected();
+    if (entry == null) {
+      return;
+    }
+    ClipLibrary.Clip clip = entry.clip;
+    Studio studio = ClipsClient.studio();
+    if (!studio.isLinked()) {
+      minecraft.gui.setScreen(new StudioLinkScreen(this, studio, () -> upload(clip)));
+      return;
+    }
+    upload(clip);
+  }
+
+  private void upload(ClipLibrary.Clip clip) {
+    ClipEdit edit = ClipEdit.load(clip.file(), clip.seconds());
+    String title = edit.title() != null ? edit.title() : generatedTitle(clip);
+    ClipsClient.studio().upload(clip, edit, title, recorder, ClipsClient::announceUpload);
+  }
+
+  /** A title made from the clip, such as {@code Kill - Raven_77, 18 Nov 21:14}. */
+  static String generatedTitle(ClipLibrary.Clip clip) {
+    String when = TITLE_TIME.format(LocalDateTime.ofInstant(clip.saved(), ZoneId.systemDefault()));
+    boolean fight = MOMENT.matcher(ClipLibrary.stem(clip.file())).find();
+    return fight ? name(clip).getString() + ", " + when : "Minecraft clip, " + when;
+  }
+
+  /** Opens the clips folder in the system's file browser. */
+  static void openFolder(Path folder) {
     try {
-      Files.createDirectories(recorder.clipsFolder());
+      Files.createDirectories(folder);
     } catch (IOException e) {
       ClipsClient.log().warn("Could not create the clips folder", e);
       return;
     }
-    Blaze3D.openPath(recorder.clipsFolder());
+    Blaze3D.openPath(folder);
   }
 
   private void confirmDelete() {
@@ -448,7 +440,7 @@ public final class ClipsScreen extends Screen {
     private final ClipLibrary.Clip clip;
     private final Component name;
     private final Component details;
-    private final ItemStack icon;
+    private final Identifier icon;
 
     private ClipEntry(ClipLibrary.Clip clip) {
       this.clip = clip;
@@ -456,7 +448,11 @@ public final class ClipsScreen extends Screen {
       String length = clip.seconds() < 0 ? "?" : duration((int) Math.round(clip.seconds()));
       Matcher moment = MOMENT.matcher(ClipLibrary.stem(clip.file()));
       boolean fight = moment.find();
-      this.icon = !fight ? ItemStack.EMPTY : new ItemStack("kill".equals(moment.group(1)) ? Items.DIAMOND_SWORD : Items.SKELETON_SKULL);
+      this.icon = !fight ? (PART.matcher(ClipLibrary.stem(clip.file())).find() ? REC : FILM) : switch (moment.group(1)) {
+        case "kill" -> SWORD;
+        case "death" -> SKULL;
+        default -> FIGHT;
+      };
       this.details = fight
           ? Component.translatable("ordersmp-clips.screen.details.moment", savedAt(clip), length, size(clip.bytes()))
           : Component.translatable("ordersmp-clips.screen.details", length, size(clip.bytes()));
@@ -483,12 +479,32 @@ public final class ClipsScreen extends Screen {
         graphics.blitSprite(RenderPipelines.GUI_TEXTURED, PLAY, x + (THUMB_WIDTH - 12) / 2, y + (THUMB_HEIGHT - 12) / 2, 12, 12);
       }
       int textX = x + THUMB_WIDTH + 4;
-      if (!icon.isEmpty()) {
-        graphics.item(icon, textX, getContentY() - 3);
-        textX += 18;
-      }
-      graphics.text(font, name, textX, getContentY() + 1, WHITE);
+      graphics.blitSprite(RenderPipelines.GUI_TEXTURED, icon, textX, getContentY(), 9, 9);
+      graphics.text(font, name, textX + 12, getContentY() + 1, WHITE);
       graphics.text(font, details, textX, getContentY() + 9 + 3, DARK_GRAY);
+      drawStudioState(graphics, textX, getContentY() + 9 + 9 + 5);
+    }
+
+    /** The clip's place in Studio: uploading with percent, in Studio, or not uploaded with the reason. */
+    private void drawStudioState(GuiGraphicsExtractor graphics, int x, int y) {
+      Studio studio = ClipsClient.studio();
+      Studio.Job job = studio.job(clip.file());
+      if (job != null && (job.phase() == Studio.Phase.PREPARING || job.phase() == Studio.Phase.UPLOADING)) {
+        graphics.blitSprite(RenderPipelines.GUI_TEXTURED, UPLOAD, x - 1, y - 2, 12, 12);
+        Component progress = Component.translatable("ordersmp-clips.editor.upload.progress", (int) Math.floor(job.progress() * 100));
+        graphics.text(font, progress, x + 12, y, AQUA);
+        return;
+      }
+      if (job != null && job.phase() == Studio.Phase.FAILED) {
+        graphics.blitSprite(RenderPipelines.GUI_TEXTURED, CROSS, x, y, 9, 9);
+        Component reason = Component.translatable("ordersmp-clips.editor.upload.failed", String.valueOf(job.problem()));
+        graphics.text(font, reason, x + 12, y, RED);
+        return;
+      }
+      if (studio.uploadedUrl(clip.file()) != null) {
+        graphics.blitSprite(RenderPipelines.GUI_TEXTURED, CHECK, x, y, 9, 9);
+        graphics.text(font, Component.translatable("ordersmp-clips.screen.in_studio"), x + 12, y, GREEN);
+      }
     }
 
     @Override

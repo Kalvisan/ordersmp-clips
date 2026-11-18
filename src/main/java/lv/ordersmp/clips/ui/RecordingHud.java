@@ -14,14 +14,15 @@ import net.minecraft.resources.Identifier;
 
 /**
  * The small recording mark in the top-left corner, and the optional stats overlay below it. The
- * mark changes shape as well as colour (film strip while clipping, filled dot while recording
+ * mark changes shape as well as colour (film strip while clipping, crossed swords in a fight, a
+ * sword after a kill, filled dot while recording
  * everything, hollow dot when paused), so its state does not depend on colour alone.
  */
 public final class RecordingHud {
 
   private static final Identifier CLIP_ICON = Identifier.fromNamespaceAndPath(ClipsClient.MOD_ID, "hud/clip");
   private static final Identifier FIGHT_ICON = Identifier.fromNamespaceAndPath(ClipsClient.MOD_ID, "hud/fight");
-  private static final Identifier KILL_ICON = Identifier.fromNamespaceAndPath(ClipsClient.MOD_ID, "hud/kill");
+  private static final Identifier KILL_ICON = Identifier.fromNamespaceAndPath(ClipsClient.MOD_ID, "hud/sword");
   private static final int CLIP_ICON_SIZE = 9;
 
   private static final int BACKGROUND = 0x80000000;
@@ -31,11 +32,16 @@ public final class RecordingHud {
   private static final int WHITE = 0xFFFFFFFF;
 
   private final Recorder recorder;
-  private final boolean visible;
+  private boolean visible;
   private boolean showStats;
 
   public RecordingHud(Recorder recorder, boolean visible) {
     this.recorder = recorder;
+    this.visible = visible;
+  }
+
+  /** Shows or hides the recording mark. */
+  public void setVisible(boolean visible) {
     this.visible = visible;
   }
 

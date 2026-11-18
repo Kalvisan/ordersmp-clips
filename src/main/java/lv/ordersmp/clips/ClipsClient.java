@@ -2,9 +2,12 @@ package lv.ordersmp.clips;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import java.nio.file.Path;
+import java.util.function.UnaryOperator;
 import java.io.IOException;
 import lv.ordersmp.clips.edit.ClipEdit;
 import lv.ordersmp.clips.encode.ClipWriter;
+import java.util.List;
+import lv.ordersmp.clips.fight.ClipEvents;
 import lv.ordersmp.clips.fight.FightTracker;
 import lv.ordersmp.clips.mixin.GameRendererAccessor;
 import lv.ordersmp.clips.studio.Studio;
@@ -44,10 +47,29 @@ public final class ClipsClient implements ClientModInitializer {
   private static Studio studio;
   private static FightTracker fights;
   private static RecordingHud mark;
+  private static ClipsConfig settings;
+  private static Path settingsFile;
 
   /** The running recorder, or null before the game finished starting. */
   public static Recorder recorder() {
     return recorder;
+  }
+
+  /** The settings in use. */
+  public static ClipsConfig settings() {
+    return settings;
+  }
+
+  /** Changes the settings, keeps them in the config file and applies them at once. */
+  public static void updateSettings(UnaryOperator<ClipsConfig> change) {
+    settings = change.apply(settings);
+    settings.save(settingsFile, LOG);
+    if (fights != null) {
+      fights.configure(settings.clipKills(), settings.clipDeaths(), settings.clipLongFights());
+    }
+    if (mark != null) {
+      mark.setVisible(settings.showHud());
+    }
   }
 
   /** The fight tracker that saves kill and death clips, or null before the game finished starting. */
@@ -115,7 +137,9 @@ public final class ClipsClient implements ClientModInitializer {
 
 
     FightTracker tracker = new FightTracker(System::nanoTime, moment -> saveMoment(created, moment));
-    tracker.configure(!ClipsConfig.AUTO_OFF.equals(config.autoClips()), ClipsConfig.AUTO_KILLS_AND_DEATHS.equals(config.autoClips()));
+    tracker.configure(config.clipKills(), config.clipDeaths(), config.clipLongFights());
+    settings = config;
+    settingsFile = FabricLoader.getInstance().getConfigDir().resolve(MOD_ID + ".json");
 
     ClientLifecycleEvents.CLIENT_STARTED.register(client -> {
       recorder = created;
@@ -204,14 +228,18 @@ public final class ClipsClient implements ClientModInitializer {
 
   /** Saves a fight the tracker found and names the clip after it, such as {@code _kill-Raven_77}. */
   private static void saveMoment(Recorder recorder, FightTracker.Moment moment) {
-    String type = moment.kind() == FightTracker.Kind.KILL ? "kill" : "death";
+    String type = switch (moment.kind()) {
+      case KILL -> "kill";
+      case DEATH -> "death";
+      case FIGHT -> "fight";
+    };
     String opponent = moment.opponent().matches("[A-Za-z0-9_]{1,16}") ? moment.opponent() : "player";
     LOG.info("{} on record against {}, {} s", type, opponent, moment.seconds());
     int after = Math.min(HANDLE_SECONDS, moment.skipSeconds());
     recorder.saveMoment(moment.seconds() + HANDLE_SECONDS + after, moment.skipSeconds() - after, "_" + type + "-" + opponent,
         saved -> {
           if (saved.file() != null) {
-            keepFightTrim(saved.file(), moment.seconds(), after);
+            keepFightTrim(saved.file(), moment, after);
           }
           Minecraft.getInstance().execute(() -> announceMoment(moment, saved));
         });
@@ -222,7 +250,7 @@ public final class ClipsClient implements ClientModInitializer {
    * to the fight itself. The editor then opens on the fight, and the player can drag the trim
    * outward when the detection cut it too tightly.
    */
-  private static void keepFightTrim(Path clip, int fightSeconds, int after) {
+  private static void keepFightTrim(Path clip, FightTracker.Moment moment, int after) {
     double length = ClipLibrary.length(clip);
     if (length <= 0) {
       return;
@@ -230,9 +258,13 @@ public final class ClipsClient implements ClientModInitializer {
     ClipEdit edit = ClipEdit.whole(length);
     double end = Math.max(1, length - after);
     edit.setEnd(end);
-    edit.setStart(end - fightSeconds);
+    edit.setStart(end - moment.seconds());
+    List<ClipEvents.Event> events = moment.events().stream()
+        .map(mark -> new ClipEvents.Event(mark.type(), Math.max(0, end - mark.secondsBeforeEnd()), mark.name()))
+        .toList();
     try {
       edit.save(clip);
+      ClipEvents.save(clip, events);
     } catch (IOException e) {
       LOG.warn("Could not keep the fight trim of {}", clip.getFileName(), e);
     }
@@ -244,8 +276,11 @@ public final class ClipsClient implements ClientModInitializer {
       toast(client, Component.translatable("ordersmp-clips.toast.failed.title"), Component.literal(String.valueOf(saved.problem())));
       return;
     }
-    String title = moment.kind() == FightTracker.Kind.DEATH ? "ordersmp-clips.toast.death"
-        : moment.kills() > 1 ? "ordersmp-clips.toast.kills" : "ordersmp-clips.toast.kill";
+    String title = switch (moment.kind()) {
+      case DEATH -> "ordersmp-clips.toast.death";
+      case FIGHT -> "ordersmp-clips.toast.fight";
+      case KILL -> moment.kills() > 1 ? "ordersmp-clips.toast.kills" : "ordersmp-clips.toast.kill";
+    };
     toast(client, Component.translatable(title, moment.kills()),
         Component.translatable("ordersmp-clips.toast.moment.body", moment.opponent(), ClipsScreen.duration(moment.seconds())));
   }

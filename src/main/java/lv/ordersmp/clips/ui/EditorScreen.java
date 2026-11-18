@@ -6,10 +6,6 @@ import com.mojang.blaze3d.platform.NativeImage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.util.Locale;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.function.DoubleConsumer;
@@ -20,6 +16,7 @@ import lv.ordersmp.clips.Recorder;
 import lv.ordersmp.clips.edit.ClipEdit;
 import lv.ordersmp.clips.edit.ClipExport;
 import lv.ordersmp.clips.edit.VideoPreview;
+import lv.ordersmp.clips.fight.ClipEvents;
 import lv.ordersmp.clips.studio.Studio;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -66,7 +63,6 @@ public final class EditorScreen extends Screen {
   private static final Identifier CROSS = icon("cross");
   private static final Identifier UPLOAD = icon("upload");
   private static final Identifier SPEAKER = icon("speaker");
-  private static final DateTimeFormatter TITLE_TIME = DateTimeFormatter.ofPattern("d MMM HH:mm", Locale.ENGLISH);
   private static final int MARGIN = 8;
   private static final int TOP = 20;
   private static final int RIGHT_MIN = 208;
@@ -159,6 +155,7 @@ public final class EditorScreen extends Screen {
     int timelineY = transportY + 24;
     timeline = addRenderableWidget(new TimelineWidget(MARGIN, timelineY, width - MARGIN * 2, TIMELINE_HEIGHT, edit,
         () -> playhead, this::seek, this::editChanged));
+    timeline.setEvents(ClipEvents.load(clip.file()));
     if (filmstripLoaded) {
       timeline.setFilmstrip(FILMSTRIP);
     }
@@ -308,7 +305,7 @@ public final class EditorScreen extends Screen {
     titleBox.setMaxLength(120);
     titleBox.setValue(uploadTitle());
     titleBox.setTooltip(Tooltip.create(Component.translatable("ordersmp-clips.editor.title.tooltip")));
-    titleBox.setResponder(value -> edit.setTitle(value, generatedTitle()));
+    titleBox.setResponder(value -> edit.setTitle(value, ClipsScreen.generatedTitle(clip)));
     uploadButton = rows.addChild(textAndIcon("ordersmp-clips.editor.studio", UPLOAD, controlWidth, button -> uploadPressed()));
     LinearLayout account = rows.addChild(LinearLayout.horizontal().spacing(4));
     accountLine = account.addChild(new MultiLineTextWidget(Component.empty(), font).setMaxWidth(controlWidth - 24));
@@ -450,7 +447,8 @@ public final class EditorScreen extends Screen {
     uploadButton.active = true;
     uploadButton.setTooltip(null);
     if (job == null) {
-      uploadButton.setMessage(Component.translatable("ordersmp-clips.editor.studio"));
+      boolean uploaded = studio.uploadedUrl(clip.file()) != null;
+      uploadButton.setMessage(Component.translatable(uploaded ? "ordersmp-clips.editor.upload.open" : "ordersmp-clips.editor.studio"));
       return;
     }
     switch (job.phase()) {
@@ -487,8 +485,10 @@ public final class EditorScreen extends Screen {
   private void uploadPressed() {
     Studio studio = ClipsClient.studio();
     Studio.Job job = studio.job(clip.file());
-    if (job != null && job.phase() == Studio.Phase.DONE && job.url() != null) {
-      Blaze3D.openUri(URI.create(job.url()));
+    String uploaded = studio.uploadedUrl(clip.file());
+    boolean busy = job != null && (job.phase() == Studio.Phase.PREPARING || job.phase() == Studio.Phase.UPLOADING);
+    if (uploaded != null && !busy && (job == null || job.phase() == Studio.Phase.DONE)) {
+      Blaze3D.openUri(URI.create(uploaded));
       return;
     }
     if (!studio.isLinked()) {
@@ -577,15 +577,9 @@ public final class EditorScreen extends Screen {
 
   /** The clip's title for Studio: what the player typed, or one made from the clip. */
   private String uploadTitle() {
-    return edit.title() != null ? edit.title() : generatedTitle();
+    return edit.title() != null ? edit.title() : ClipsScreen.generatedTitle(clip);
   }
 
-  /** A title made from the clip, such as {@code Kill - Raven_77, 18 Nov 21:14}. */
-  private String generatedTitle() {
-    String when = TITLE_TIME.format(LocalDateTime.ofInstant(clip.saved(), ZoneId.systemDefault()));
-    String name = ClipsScreen.name(clip).getString();
-    return name.startsWith("Kill") || name.startsWith("Death") ? name + ", " + when : "Minecraft clip, " + when;
-  }
 
   /** A tab or button label with one of the mod's pixel icons in front, drawn inside the text. */
   private static Component withIcon(Identifier icon, String key) {
