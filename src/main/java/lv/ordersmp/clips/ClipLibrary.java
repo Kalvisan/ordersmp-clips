@@ -47,6 +47,7 @@ public final class ClipLibrary {
   private static final String EDIT_FOLDER = ".edits";
   private static final String EVENT_FOLDER = ".events";
   private static final String STUDIO_FOLDER = ".studio";
+  private static final String AUDIO_FOLDER = ".audio";
 
   private ClipLibrary() {}
 
@@ -73,6 +74,23 @@ public final class ClipLibrary {
     Files.deleteIfExists(editFile(clip.file()));
     Files.deleteIfExists(eventsFile(clip.file()));
     Files.deleteIfExists(studioFile(clip.file()));
+    deleteFolder(audioFolder(clip.file()));
+  }
+
+  /** Where the clip's sound tracks are kept: game sound and one per voice. */
+  public static Path audioFolder(Path clip) {
+    return clip.resolveSibling(AUDIO_FOLDER).resolve(stem(clip));
+  }
+
+  private static void deleteFolder(Path folder) throws IOException {
+    if (!Files.isDirectory(folder)) {
+      return;
+    }
+    try (Stream<Path> files = Files.walk(folder)) {
+      for (Path file : files.sorted(Comparator.reverseOrder()).toList()) {
+        Files.deleteIfExists(file);
+      }
+    }
   }
 
   /** Where the address of the clip's Studio copy is kept once it was uploaded. */

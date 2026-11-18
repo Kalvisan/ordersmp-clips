@@ -8,9 +8,15 @@ import java.io.IOException;
 import lv.ordersmp.clips.edit.ClipEdit;
 import lv.ordersmp.clips.encode.ClipWriter;
 import java.util.List;
+import com.mojang.blaze3d.audio.ListenerTransform;
+import lv.ordersmp.clips.audio.ClipAudio;
+import lv.ordersmp.clips.audio.SoundLog;
+import lv.ordersmp.clips.audio.SoundMixer;
 import lv.ordersmp.clips.fight.ClipEvents;
 import lv.ordersmp.clips.fight.FightTracker;
 import lv.ordersmp.clips.mixin.GameRendererAccessor;
+import lv.ordersmp.clips.mixin.SoundEngineAccessor;
+import lv.ordersmp.clips.mixin.SoundManagerAccessor;
 import lv.ordersmp.clips.studio.Studio;
 import lv.ordersmp.clips.ui.ClipsScreen;
 import lv.ordersmp.clips.ui.EditorScreen;
@@ -24,6 +30,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.client.sounds.SoundManager;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.toasts.SystemToast;
 import net.minecraft.client.gui.screens.Screen;
@@ -47,6 +54,7 @@ public final class ClipsClient implements ClientModInitializer {
   private static KeyMapping recordMapping;
   private static Studio studio;
   private static FightTracker fights;
+  private static SoundLog soundLog;
   private static RecordingHud mark;
   private static ClipsConfig settings;
   private static Path settingsFile;
@@ -74,6 +82,14 @@ public final class ClipsClient implements ClientModInitializer {
     if (recorder != null) {
       recorder.reconfigure(settings);
     }
+    if (soundLog != null) {
+      soundLog.keep(soundWindow(settings));
+    }
+  }
+
+  /** The log of game sounds that clips are mixed from, or null before the game finished starting. */
+  public static SoundLog soundLog() {
+    return soundLog;
   }
 
   /** The fight tracker that saves kill and death clips, or null before the game finished starting. */
@@ -145,9 +161,14 @@ public final class ClipsClient implements ClientModInitializer {
     settings = config;
     settingsFile = FabricLoader.getInstance().getConfigDir().resolve(MOD_ID + ".json");
 
+    SoundLog sounds = new SoundLog();
+    sounds.keep(soundWindow(config));
+    created.setAudio(new ClipAudio(sounds, new SoundMixer(file -> Minecraft.getInstance().getResourceManager().open(file)), LOG));
+
     ClientLifecycleEvents.CLIENT_STARTED.register(client -> {
       recorder = created;
       fights = tracker;
+      soundLog = sounds;
       created.probe(gameDir.resolve(MOD_ID)).thenAccept(result -> {
         if (result.ready()) {
           return;
@@ -170,6 +191,7 @@ public final class ClipsClient implements ClientModInitializer {
     PressDetector recordKey = new PressDetector(record);
     ClientTickEvents.END_CLIENT_TICK.register(client -> {
       tracker.tick();
+      listen(client, sounds);
       if (saveKey.pressed()) {
         created.saveClip(saved -> client.execute(() -> announce(client, saved)));
       }
@@ -248,6 +270,18 @@ public final class ClipsClient implements ClientModInitializer {
           }
           Minecraft.getInstance().execute(() -> announceMoment(moment, saved));
         });
+  }
+
+  /** How many seconds of sound to keep: enough for a saved clip and for a whole Recording part. */
+  private static int soundWindow(ClipsConfig config) {
+    return Math.max(config.bufferSeconds(), config.recordingPartMinutes() * 60);
+  }
+
+  /** Notes where the listener is and which sounds still play, for mixing the clip's sound later. */
+  private static void listen(Minecraft client, SoundLog sounds) {
+    SoundManager manager = client.getSoundManager();
+    ListenerTransform ear = ((SoundEngineAccessor) ((SoundManagerAccessor) manager).clips$soundEngine()).clips$listener().getTransform();
+    sounds.tick(ear.position(), ear.right(), manager::isActive);
   }
 
   /** With Send to Studio on and Studio linked, uploads a new automatic clip with its fight trim. */

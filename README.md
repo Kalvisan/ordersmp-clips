@@ -5,7 +5,7 @@ video with one key. Recording runs on your graphics card's built-in video encode
 almost nothing in FPS. It works in singleplayer and on any server.
 
 > Status: early development (0.1). Recording, automatic kill clips, the editor and Studio upload
-> work; sound and voice chat tracks are on the [roadmap](#roadmap).
+> work, with game sound; voice chat tracks are on the [roadmap](#roadmap).
 
 ## Features
 
@@ -145,6 +145,14 @@ The mark is drawn after each frame is captured, so you see it but your clips nev
 | Gray outline, `Paused` | Paused with F9 |
 | Yellow, `Clips off` | Something is missing; a message explains what |
 
+### Sound
+
+Every clip gets the game's sound. Clips logs which sounds played, where and how loud, and mixes the
+clip's sound when it is saved, from the same sound files, with distance and left and right like in
+the game. Nothing extra runs while you play. Your sound category sliders count (music, players and so
+on), the master slider does not, so turning the game down never makes clips quieter. The mixed
+track is kept beside the clip in `.audio/` as a lossless file, and a copy is inside the MP4.
+
 ## Configuration
 
 Settings live in `<instance>/config/ordersmp-clips.json`, created on first start:
@@ -197,7 +205,10 @@ Memory use is roughly bitrate times buffer length: 2 minutes at 10 Mbps is about
 
 - Tested so far on Windows with an NVIDIA graphics card on the OpenGL renderer. AMD, Intel, macOS,
   Linux, the Vulkan renderer and shader packs are not tested yet; reports are welcome.
-- Clips have no sound yet.
+- Game sound is mixed from the sounds the game played, not recorded from your speakers, so it is
+  close to what you heard but not identical: reverb and occlusion mods and sounds other mods play
+  on their own are not in it. With the master volume at 0 the game plays no sounds, so clips are
+  silent too.
 
 ## Roadmap
 

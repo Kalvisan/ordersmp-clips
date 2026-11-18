@@ -11,6 +11,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import lv.ordersmp.clips.audio.ClipAudio;
 import lv.ordersmp.clips.capture.FrameCapture;
 import lv.ordersmp.clips.encode.ClipWriter;
 import lv.ordersmp.clips.encode.EncoderProbe;
@@ -69,6 +70,7 @@ public final class Recorder {
   private long maxWindowStart;
   private volatile long lastSaveNanos;
   private volatile SessionRecording session;
+  private volatile ClipAudio audio;
 
   public Recorder(ClipsConfig config, Path clipsFolder, Logger log) {
     this.config = config;
@@ -98,6 +100,11 @@ public final class Recorder {
     int frames = config.bufferSeconds() * config.fps();
     long bytes = (long) config.bitrateFor(config.maxHeight()) * 3 / 2 / 8 * (config.bufferSeconds() + 5);
     return new PacketRing((int) Math.min(Integer.MAX_VALUE - 8, bytes), frames);
+  }
+
+  /** Gives saved clips and Recording parts their sound from now on. */
+  public void setAudio(ClipAudio audio) {
+    this.audio = audio;
   }
 
   /** Looks for ffmpeg and a working encoder in the background; recording starts when it is done. */
@@ -200,6 +207,10 @@ public final class Recorder {
     state = State.SAVING;
     saver.execute(() -> {
       ClipWriter.Saved saved = ClipWriter.save(ring, ready.ffmpeg(), config.fps(), seconds, skipSeconds, clipsFolder, suffix);
+      ClipAudio sound = audio;
+      if (saved.file() != null && sound != null) {
+        sound.addTo(saved.file(), saved.startNanos(), saved.endNanos(), ready.ffmpeg());
+      }
       if (saved.file() != null) {
         ClipLibrary.thumbnail(saved.file(), ready.ffmpeg());
       }
@@ -293,6 +304,10 @@ public final class Recorder {
           return null;
         }
         Files.deleteIfExists(raw);
+        ClipAudio sound = audio;
+        if (sound != null) {
+          sound.addTo(target, startNanos, endNanos + 1_000_000_000L / config.fps(), ffmpeg);
+        }
         ClipLibrary.thumbnail(target, ffmpeg);
       } catch (IOException e) {
         log.warn("Recording part {} could not be written", target.getFileName(), e);
