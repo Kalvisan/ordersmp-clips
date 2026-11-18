@@ -14,13 +14,12 @@ import net.minecraft.resources.Identifier;
 
 /**
  * The small recording mark in the top-left corner, and the optional stats overlay below it. The
- * mark changes shape as well as colour (film strip while clipping, crossed swords in a fight, a
- * sword after a kill, filled dot while recording
- * everything, hollow dot when paused), so its state does not depend on colour alone.
+ * mark changes shape as well as colour (a red dot alone while clipping, crossed swords in a
+ * fight, a sword after a kill, a red dot with LIVE while recording everything, a hollow dot when
+ * paused), so its state does not depend on colour alone.
  */
 public final class RecordingHud {
 
-  private static final Identifier CLIP_ICON = Identifier.fromNamespaceAndPath(ClipsClient.MOD_ID, "hud/clip");
   private static final Identifier FIGHT_ICON = Identifier.fromNamespaceAndPath(ClipsClient.MOD_ID, "hud/fight");
   private static final Identifier KILL_ICON = Identifier.fromNamespaceAndPath(ClipsClient.MOD_ID, "hud/sword");
   private static final int CLIP_ICON_SIZE = 9;
@@ -70,15 +69,15 @@ public final class RecordingHud {
 
   private int drawMark(GuiGraphicsExtractor graphics, Font font) {
     Recorder.State state = recorder.state();
-    Component label = state == Recorder.State.RECORDING && recorder.isRecordingSession()
-        ? Component.translatable("ordersmp-clips.hud.recording", ClipsScreen.duration(recorder.recordingSeconds()))
-        : Component.translatable(switch (state) {
-      case RECORDING -> "ordersmp-clips.hud.clip";
-      case PAUSED -> "ordersmp-clips.hud.paused";
-      case SAVING -> "ordersmp-clips.hud.saving";
-      case STARTING -> "ordersmp-clips.hud.starting";
-      case PROBLEM -> "ordersmp-clips.hud.problem";
-    });
+    Component label = switch (state) {
+      case RECORDING -> recorder.isRecordingSession()
+          ? Component.translatable("ordersmp-clips.hud.recording", ClipsScreen.duration(recorder.recordingSeconds()))
+          : Component.empty();
+      case PAUSED -> Component.translatable("ordersmp-clips.hud.paused");
+      case SAVING -> Component.translatable("ordersmp-clips.hud.saving");
+      case STARTING -> Component.translatable("ordersmp-clips.hud.starting");
+      case PROBLEM -> Component.translatable("ordersmp-clips.hud.problem");
+    };
     int color = switch (state) {
       case RECORDING -> RED;
       case SAVING, PROBLEM -> YELLOW;
@@ -89,28 +88,26 @@ public final class RecordingHud {
     if (fight != null) {
       label = fight;
     }
-    int iconWidth = clipping ? CLIP_ICON_SIZE : 5;
-    int width = minimal ? 4 + iconWidth + 4 : 4 + iconWidth + 3 + font.width(label) + 4;
+    boolean iconOnly = minimal || (clipping && fight == null);
+    int iconWidth = fight != null ? CLIP_ICON_SIZE : 5;
+    int width = iconOnly ? 4 + iconWidth + 4 : 4 + iconWidth + 3 + font.width(label) + 4;
     graphics.fill(4, 4, 4 + width, 17, BACKGROUND);
-    if (clipping) {
-      graphics.blitSprite(RenderPipelines.GUI_TEXTURED, clipIcon(), 8, 6, CLIP_ICON_SIZE, CLIP_ICON_SIZE);
+    if (fight != null) {
+      graphics.blitSprite(RenderPipelines.GUI_TEXTURED, fightIcon(), 8, 6, CLIP_ICON_SIZE, CLIP_ICON_SIZE);
     } else {
       drawDot(graphics, 8, 8, state, color);
     }
-    if (minimal) {
+    if (iconOnly) {
       return 17;
     }
     graphics.text(font, label, 8 + iconWidth + 3, 6, fight != null ? YELLOW : state == Recorder.State.RECORDING ? WHITE : color);
     return 17;
   }
 
-  /** The clipping icon for what is happening: film strip, crossed swords in a fight, skull after a kill. */
-  private static Identifier clipIcon() {
+  /** The icon while a fight is followed: crossed swords, then a sword once there is a kill. */
+  private static Identifier fightIcon() {
     FightTracker fights = ClipsClient.fights();
-    if (fights == null || fights.fightSeconds() < 0) {
-      return CLIP_ICON;
-    }
-    return fights.kills() > 0 ? KILL_ICON : FIGHT_ICON;
+    return fights != null && fights.kills() > 0 ? KILL_ICON : FIGHT_ICON;
   }
 
   /** While a fight is being followed: how long it has run, or that a kill is waiting to be saved. */
