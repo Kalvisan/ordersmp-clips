@@ -16,13 +16,28 @@ import java.util.Iterator;
  */
 public final class PacketRing {
 
-  private record Entry(int offset, int length, boolean keyframe) {}
+  private record Entry(int offset, int length, boolean keyframe, long time) {}
+
+  /**
+   * What {@link #writeLatest} wrote.
+   *
+   * @param frames frames written
+   * @param first time of the first frame written, from {@link System#nanoTime()}
+   * @param last time of the last frame written
+   */
+  public record Written(int frames, long first, long last) {}
+
+  /** Receives every encoded frame as it arrives, before the ring keeps or drops it. */
+  public interface Tap {
+    void frame(byte[] data, int length, boolean keyframe, long time);
+  }
 
   private final ByteBuffer memory;
   private final ArrayDeque<Entry> entries = new ArrayDeque<>();
   private final int maxFrames;
   private int writeAt;
   private long dropped;
+  private volatile Tap tap;
 
   /**
    * @param capacityBytes size of the memory block
@@ -33,8 +48,20 @@ public final class PacketRing {
     this.maxFrames = maxFrames;
   }
 
-  /** Adds one encoded frame; frames larger than a quarter of the buffer are dropped and counted. */
-  public synchronized void add(byte[] data, int length, boolean keyframe) {
+  /** Sends every new frame to {@code tap} as well, or stops doing so with null. */
+  public void tap(Tap tap) {
+    this.tap = tap;
+  }
+
+  /**
+   * Adds one encoded frame taken at {@code time}; frames larger than a quarter of the buffer are
+   * dropped and counted.
+   */
+  public synchronized void add(byte[] data, int length, boolean keyframe, long time) {
+    Tap current = tap;
+    if (current != null) {
+      current.frame(data, length, keyframe, time);
+    }
     if (length > memory.capacity() / 4) {
       dropped++;
       return;
@@ -44,7 +71,7 @@ public final class PacketRing {
     }
     evictOverlapping(writeAt, length);
     memory.put(writeAt, data, 0, length);
-    entries.addLast(new Entry(writeAt, length, keyframe));
+    entries.addLast(new Entry(writeAt, length, keyframe, time));
     writeAt += length;
     while (entries.size() > maxFrames) {
       entries.removeFirst();
@@ -78,28 +105,33 @@ public final class PacketRing {
   }
 
   /**
-   * Writes the newest {@code frames} frames, starting at a keyframe, to {@code out} as a raw H.264
-   * stream, and returns how many frames were written.
+   * Writes up to {@code frames} frames that end {@code skipNewest} frames before the newest one,
+   * starting at the first keyframe in that range, so the written stream always decodes. Skipping
+   * the newest frames lets a clip end at a moment that is already a few seconds in the past.
    */
-  public synchronized int writeLatest(int frames, OutputStream out) throws IOException {
-    int skip = Math.max(0, entries.size() - frames);
+  public synchronized Written writeLatest(int frames, int skipNewest, OutputStream out) throws IOException {
+    int end = Math.max(0, entries.size() - skipNewest);
+    int start = Math.max(0, end - frames);
     Iterator<Entry> it = entries.iterator();
-    for (int i = 0; i < skip; i++) {
-      it.next();
-    }
     WritableByteChannel channel = Channels.newChannel(out);
     int written = 0;
+    long first = 0;
+    long last = 0;
     boolean started = false;
-    while (it.hasNext()) {
+    for (int index = 0; index < end && it.hasNext(); index++) {
       Entry entry = it.next();
-      if (!started && !entry.keyframe()) {
+      if (index < start || (!started && !entry.keyframe())) {
         continue;
+      }
+      if (!started) {
+        first = entry.time();
       }
       started = true;
       channel.write(memory.slice(entry.offset(), entry.length()));
+      last = entry.time();
       written++;
     }
-    return written;
+    return new Written(written, first, last);
   }
 
   private void evictOverlapping(int start, int length) {

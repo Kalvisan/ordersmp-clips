@@ -1,11 +1,14 @@
 package lv.ordersmp.clips.encode;
 
 import java.util.Arrays;
+import java.util.function.LongSupplier;
 
 /**
  * Cuts ffmpeg's H.264 byte stream into whole frames. ffmpeg is told to start every frame with an
  * access-unit delimiter (NAL type 9), so a frame ends where the next delimiter starts; a frame that
- * contains an IDR slice (NAL type 5) is a keyframe where a clip may begin.
+ * contains an IDR slice (NAL type 5) is a keyframe where a clip may begin. Each frame takes the
+ * next time from {@code times}: frames leave ffmpeg in the order they went in, so this is the moment
+ * the frame was handed to the encoder.
  */
 final class AccessUnitSplitter {
 
@@ -13,13 +16,15 @@ final class AccessUnitSplitter {
   private static final int NAL_AUD = 9;
 
   private final PacketRing ring;
+  private final LongSupplier times;
   private byte[] buf = new byte[1 << 20];
   private int len;
   private int scanFrom;
   private boolean keyframe;
 
-  AccessUnitSplitter(PacketRing ring) {
+  AccessUnitSplitter(PacketRing ring, LongSupplier times) {
     this.ring = ring;
+    this.times = times;
   }
 
   /** Adds bytes read from ffmpeg and passes every completed frame to the ring. */
@@ -56,7 +61,7 @@ final class AccessUnitSplitter {
   }
 
   private void emit(int end) {
-    ring.add(buf, end, keyframe);
+    ring.add(buf, end, keyframe, times.getAsLong());
     keyframe = false;
     System.arraycopy(buf, end, buf, 0, len - end);
     len -= end;

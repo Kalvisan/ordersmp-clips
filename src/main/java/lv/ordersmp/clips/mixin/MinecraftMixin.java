@@ -13,9 +13,10 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Hands every finished frame to the recorder. It runs where Minecraft's own frame capture for the
- * Tracy profiler runs: after the world, the HUD and any open screen are drawn, and before the frame
- * is submitted, so a clip shows exactly what the player saw.
+ * Hands every finished frame to the recorder right after the game drew it (world, HUD and any open
+ * screen) and before the frame goes to the window. Then the recording mark is drawn on top in a
+ * pass of its own: the window shows it, but the captured frame was taken before it, so the mark
+ * never appears in a clip.
  */
 @Mixin(Minecraft.class)
 abstract class MinecraftMixin {
@@ -29,12 +30,13 @@ abstract class MinecraftMixin {
 
   @Inject(
       method = "renderFrame",
-      at = @At(value = "INVOKE", target = "Lcom/mojang/renderpearl/api/commands/CommandEncoder;submit()V", ordinal = 0))
+      at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/GameRenderer;render()V", shift = At.Shift.AFTER))
   private void clips$captureFrame(boolean advanceGameTime, CallbackInfo ci) {
     Recorder recorder = ClipsClient.recorder();
     if (recorder == null) {
       return;
     }
     recorder.onFrameRendered(gameRenderer.mainRenderTarget(), level != null);
+    ClipsClient.drawMark(gameRenderer);
   }
 }

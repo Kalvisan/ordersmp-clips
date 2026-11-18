@@ -26,6 +26,8 @@ public final class VideoEncoder implements AutoCloseable {
 
   private static final int POOL_SIZE = 3;
 
+  private static final int SLOT_TIMES = 1024;
+
   private final Process process;
   private final PacketRing ring;
   private final Logger log;
@@ -35,6 +37,7 @@ public final class VideoEncoder implements AutoCloseable {
   private final int frameBytes;
   private final BlockingQueue<ByteBuffer> pool = new ArrayBlockingQueue<>(POOL_SIZE);
   private final AtomicReference<ByteBuffer> pending = new AtomicReference<>();
+  private final BlockingQueue<Long> slotTimes = new ArrayBlockingQueue<>(SLOT_TIMES);
   private final AtomicLong framesSent = new AtomicLong();
   private final AtomicLong framesRepeated = new AtomicLong();
   private final AtomicLong framesSkipped = new AtomicLong();
@@ -146,6 +149,7 @@ public final class VideoEncoder implements AutoCloseable {
           out.write(view);
         }
         framesSent.incrementAndGet();
+        slotTimes.offer(System.nanoTime());
       }
     } catch (IOException e) {
       fail("ffmpeg stopped taking frames: " + e.getMessage());
@@ -153,7 +157,10 @@ public final class VideoEncoder implements AutoCloseable {
   }
 
   private void readLoop() {
-    AccessUnitSplitter splitter = new AccessUnitSplitter(ring);
+    AccessUnitSplitter splitter = new AccessUnitSplitter(ring, () -> {
+      Long time = slotTimes.poll();
+      return time == null ? System.nanoTime() : time;
+    });
     byte[] chunk = new byte[1 << 16];
     try (InputStream in = process.getInputStream()) {
       int read;
