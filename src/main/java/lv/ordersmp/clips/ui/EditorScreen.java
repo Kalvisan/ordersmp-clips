@@ -102,6 +102,7 @@ public final class EditorScreen extends Screen {
   private Button unlinkButton;
   private TimelineWidget timeline;
   private TabNavigationBar tabs;
+  private ScreenRectangle tabArea;
 
   public EditorScreen(Screen parent, Recorder recorder, ClipLibrary.Clip clip) {
     super(Component.translatable("ordersmp-clips.editor.title", ClipsScreen.name(clip)));
@@ -171,7 +172,8 @@ public final class EditorScreen extends Screen {
         .addTab(new MenuTabBar.MenuTabButton(tabManager, send, tabWidth, 24), send)
         .build());
     tabs.arrangeElements(rightWidth);
-    tabManager.setTabArea(new ScreenRectangle(rightX, TOP + 28, rightWidth, timelineY - TOP - 32));
+    tabArea = new ScreenRectangle(rightX, TOP + 28, rightWidth, timelineY - TOP - 32);
+    tabManager.setTabArea(tabArea);
     tabs.selectTab(tabIndex, false);
     refreshControls();
   }
@@ -291,15 +293,15 @@ public final class EditorScreen extends Screen {
     GridLayout.RowHelper rows = tab.rows(1);
     uploadButton = rows.addChild(textAndIcon("ordersmp-clips.editor.studio", UPLOAD, controlWidth, button -> uploadPressed()));
     accountLine = rows.addChild(new MultiLineTextWidget(Component.empty(), font).setMaxWidth(controlWidth));
-    unlinkButton = rows.addChild(Button.builder(Component.translatable("ordersmp-clips.editor.unlink"), button -> {
-      ClipsClient.studio().unlink();
-      refreshControls();
-    }).width(controlWidth).build());
     exportButton = rows.addChild(Button.builder(Component.translatable("ordersmp-clips.editor.export"), button -> export())
         .width(controlWidth)
         .tooltip(Tooltip.create(Component.translatable("ordersmp-clips.editor.export.tooltip")))
         .build());
     rows.addChild(new MultiLineTextWidget(Component.translatable("ordersmp-clips.editor.send.note"), font).setMaxWidth(controlWidth));
+    unlinkButton = rows.addChild(Button.builder(Component.translatable("ordersmp-clips.editor.unlink"), button -> {
+      ClipsClient.studio().unlink();
+      refreshControls();
+    }).width(controlWidth).build());
     return tab;
   }
 
@@ -411,7 +413,11 @@ public final class EditorScreen extends Screen {
     endSlider.sync();
     removeButton.active = edit.canRemoveAt(playhead);
     removeButton.setMessage(Component.translatable(edit.isRemoved(playhead) ? "ordersmp-clips.editor.keep" : "ordersmp-clips.editor.remove"));
+    Component accountBefore = accountLine.getMessage();
     refreshUpload();
+    if (!accountLine.getMessage().equals(accountBefore) && tabArea != null) {
+      tabManager.setTabArea(tabArea);
+    }
     exportButton.active = !exporting;
     exportButton.setMessage(Component.translatable(exporting ? "ordersmp-clips.editor.exporting" : "ordersmp-clips.editor.export"));
   }
