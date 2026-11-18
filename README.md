@@ -106,6 +106,9 @@ The editor plays the clip in game and keeps editing to the basics:
   in automatic clips.
 - **Cut Here** puts a cut at the playhead; **Remove Part** leaves out the part between two cuts
   (striped on the timeline) and **Keep Part** brings it back. **Reset All** undoes everything.
+- **Audio tab:** one slider (0 to 200%) and a mute button per track: game sound, your voice and
+  each player you heard. The preview has no sound yet; volumes apply when you save a new clip or
+  upload, where the sound is mixed again from the tracks and the video is still copied.
 - **Done** keeps your edits next to the clip; the video file itself is never changed.
 - **Save as New Clip** (Upload tab) writes only the kept parts to a new MP4 next to the original.
   The video is copied, not re-encoded, so it takes a moment and keeps full quality. Because of
@@ -151,7 +154,11 @@ Every clip gets the game's sound. Clips logs which sounds played, where and how 
 clip's sound when it is saved, from the same sound files, with distance and left and right like in
 the game. Nothing extra runs while you play. Your sound category sliders count (music, players and so
 on), the master slider does not, so turning the game down never makes clips quieter. The mixed
-track is kept beside the clip in `.audio/` as a lossless file, and a copy is inside the MP4.
+track is kept beside the clip in `.audio/` as a lossless file, and a mix is inside the MP4.
+
+With [Simple Voice Chat](https://modrinth.com/plugin/simple-voice-chat) installed, your voice and
+every player you hear get their own track too, named after the player. The defaults for game sound,
+your voice and other players are in **Options**; each clip's editor changes them per track.
 
 ## Configuration
 
@@ -171,7 +178,10 @@ Settings live in `<instance>/config/ordersmp-clips.json`, created on first start
   "clipKills": true,
   "clipDeaths": true,
   "clipLongFights": false,
-  "sendToStudio": false
+  "sendToStudio": false,
+  "volumeGame": 100,
+  "volumeMine": 100,
+  "volumeOthers": 100
 }
 ```
 
@@ -186,6 +196,7 @@ Settings live in `<instance>/config/ordersmp-clips.json`, created on first start
 | `showHud` | Show the recording mark |
 | `studioUrl` | The OrderSMP Studio that **Upload to Studio** sends clips to |
 | `sendToStudio` | Upload new automatic clips to Studio by themselves (off by default) |
+| `volumeGame`, `volumeMine`, `volumeOthers` | Default volume in percent of game sound, your voice and other players in new clips |
 | `recordingPartMinutes` | Length of each file Recording mode writes (1 to 60 minutes) |
 | `clipKills`, `clipDeaths`, `clipLongFights` | Which moments save themselves (also in **Options**) |
 
@@ -214,7 +225,8 @@ Memory use is roughly bitrate times buffer length: 2 minutes at 10 Mbps is about
 
 - Exact fight starts and kills from the OrderSMP server, instead of what the client sees
 - Simple Voice Chat voices as separate tracks with a volume per player
-- Sound in the editor: game sound and voice volumes per player
+- Sound in the editor preview
+- Voice distance and whispers as you heard them (voices are kept at full level for now)
 - Builds for each new Minecraft release
 
 ## Building from source

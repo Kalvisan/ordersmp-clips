@@ -62,9 +62,12 @@ public class ClipsOptionsScreen extends OptionsSubScreen {
     list.addBig(autoClip(c));
     list.addSmall(clipping(), recordingMode());
     list.addHeader(Component.translatable("ordersmp-clips.options.volume"));
-    list.addBig(laterVolume("ordersmp-clips.options.volume.game"));
-    list.addBig(laterVolume("ordersmp-clips.options.volume.mic"));
-    list.addBig(laterVolume("ordersmp-clips.options.volume.others"));
+    list.addBig(volume("ordersmp-clips.options.volume.game", c.volumeGame(),
+        percent -> ClipsClient.updateSettings(s -> s.withVolumes(percent, s.volumeMine(), s.volumeOthers()))));
+    list.addBig(volume("ordersmp-clips.options.volume.mic", c.volumeMine(),
+        percent -> ClipsClient.updateSettings(s -> s.withVolumes(s.volumeGame(), percent, s.volumeOthers()))));
+    list.addBig(volume("ordersmp-clips.options.volume.others", c.volumeOthers(),
+        percent -> ClipsClient.updateSettings(s -> s.withVolumes(s.volumeGame(), s.volumeMine(), percent))));
     list.addSmall(studioLink(), sendToStudio(c));
     list.addSmall(status(), keyBinds());
     list.addBig(Button.builder(Component.translatable("ordersmp-clips.options.advanced"),
@@ -238,10 +241,9 @@ public class ClipsOptionsScreen extends OptionsSubScreen {
     return button;
   }
 
-  private AbstractWidget laterVolume(String key) {
-    ValueSlider slider = new ValueSlider(BIG, 0, 200, 5, 100, percent -> Component.translatable(key, percent), percent -> {});
-    slider.setTooltip(Tooltip.create(Component.translatable("ordersmp-clips.options.volume.later")));
-    slider.active = false;
+  private AbstractWidget volume(String key, int current, IntConsumer change) {
+    ValueSlider slider = new ValueSlider(BIG, 0, 200, 5, current, percent -> Component.translatable(key, percent), change);
+    slider.setTooltip(Tooltip.create(Component.translatable(key + ".tooltip")));
     return slider;
   }
 

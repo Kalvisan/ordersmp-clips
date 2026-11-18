@@ -15,6 +15,8 @@ import lv.ordersmp.clips.ClipsClient;
 import lv.ordersmp.clips.Recorder;
 import lv.ordersmp.clips.edit.ClipEdit;
 import lv.ordersmp.clips.edit.ClipExport;
+import java.util.List;
+import lv.ordersmp.clips.audio.AudioTracks;
 import lv.ordersmp.clips.edit.VideoPreview;
 import lv.ordersmp.clips.fight.ClipEvents;
 import lv.ordersmp.clips.studio.Studio;
@@ -63,6 +65,8 @@ public final class EditorScreen extends Screen {
   private static final Identifier CROSS = icon("cross");
   private static final Identifier UPLOAD = icon("upload");
   private static final Identifier SPEAKER = icon("speaker");
+  private static final Identifier MUTED = icon("muted");
+  private static final int MAX_TRACK_ROWS = 8;
   private static final int MARGIN = 8;
   private static final int TOP = 20;
   private static final int RIGHT_MIN = 208;
@@ -290,12 +294,53 @@ public final class EditorScreen extends Screen {
     return tab;
   }
 
+  /**
+   * One row per sound track: a volume slider from 0 to 200 percent and a mute button. Changes are
+   * kept with the clip's edit and applied when the clip is saved as a new clip or uploaded.
+   */
   private GridLayoutTab audioTab(int controlWidth) {
     EditorTab tab = new EditorTab(withIcon(SPEAKER, "ordersmp-clips.editor.tab.audio"));
-    GridLayout.RowHelper rows = tab.rows(1);
-    rows.addChild(new MultiLineTextWidget(Component.translatable("ordersmp-clips.editor.audio.none"), font).setMaxWidth(controlWidth));
-    rows.addChild(new MultiLineTextWidget(Component.translatable("ordersmp-clips.editor.audio.later"), font).setMaxWidth(controlWidth));
+    GridLayout.RowHelper rows = tab.rows(2);
+    List<AudioTracks.Track> tracks = AudioTracks.load(clip.file());
+    if (tracks.isEmpty()) {
+      rows.addChild(new MultiLineTextWidget(Component.translatable("ordersmp-clips.editor.audio.none"), font).setMaxWidth(controlWidth), 2);
+      return tab;
+    }
+    int shown = 0;
+    for (AudioTracks.Track track : tracks) {
+      if (shown++ == MAX_TRACK_ROWS) {
+        rows.addChild(new MultiLineTextWidget(Component.translatable("ordersmp-clips.editor.audio.more", tracks.size() - MAX_TRACK_ROWS), font)
+            .setMaxWidth(controlWidth), 2);
+        break;
+      }
+      int saved = ClipsClient.settings().defaultVolume(track.kind());
+      String name = trackName(track);
+      ClipsOptionsScreen.ValueSlider slider = new ClipsOptionsScreen.ValueSlider(controlWidth - 24, 0, 200, 5,
+          edit.volume(track.file(), saved),
+          percent -> edit.isMuted(track.file()) || percent == 0
+              ? Component.translatable("ordersmp-clips.editor.audio.muted", name)
+              : Component.translatable("ordersmp-clips.editor.audio.volume", name, percent),
+          percent -> {
+            edit.setVolume(track.file(), percent);
+            refreshControls();
+          });
+      rows.addChild(slider);
+      rows.addChild(iconOnly(edit.isMuted(track.file()) ? "ordersmp-clips.editor.audio.unmute" : "ordersmp-clips.editor.audio.mute",
+          edit.isMuted(track.file()) ? MUTED : SPEAKER, button -> {
+            edit.setMuted(track.file(), !edit.isMuted(track.file()));
+            rebuildWidgets();
+          }));
+    }
+    rows.addChild(new MultiLineTextWidget(Component.translatable("ordersmp-clips.editor.audio.note"), font).setMaxWidth(controlWidth), 2);
     return tab;
+  }
+
+  private static String trackName(AudioTracks.Track track) {
+    return switch (track.kind()) {
+      case GAME -> Component.translatable("ordersmp-clips.editor.audio.game").getString();
+      case MINE -> Component.translatable("ordersmp-clips.editor.audio.mine").getString();
+      case VOICE -> track.name();
+    };
   }
 
   private GridLayoutTab sendTab(int controlWidth) {

@@ -9,6 +9,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.Objects;
 import java.util.TreeSet;
 import lv.ordersmp.clips.ClipLibrary;
@@ -43,7 +45,8 @@ public final class ClipEdit {
     }
   }
 
-  private record Stored(double start, double end, List<Double> cuts, List<Part> removed, String title) {}
+  private record Stored(double start, double end, List<Double> cuts, List<Part> removed, String title,
+      Map<String, Integer> volumes, List<String> muted) {}
 
   private static final Gson GSON = new Gson();
   private static final double MIN_LENGTH = 1;
@@ -55,6 +58,8 @@ public final class ClipEdit {
   private final TreeSet<Double> cuts = new TreeSet<>();
   private final List<Part> removed = new ArrayList<>();
   private String title;
+  private final Map<String, Integer> volumes = new TreeMap<>();
+  private final TreeSet<String> muted = new TreeSet<>();
 
   private ClipEdit(double length) {
     this.length = length;
@@ -84,6 +89,12 @@ public final class ClipEdit {
         stored.cuts().forEach(edit::cut);
       }
       edit.title = stored.title();
+      if (stored.volumes() != null) {
+        stored.volumes().forEach((track, percent) -> edit.setVolume(track, percent == null ? 100 : percent));
+      }
+      if (stored.muted() != null) {
+        stored.muted().forEach(track -> edit.setMuted(track, true));
+      }
       if (stored.removed() != null) {
         stored.removed().stream().filter(part -> part.from() < part.to()).forEach(edit.removed::add);
       }
@@ -101,7 +112,7 @@ public final class ClipEdit {
       return;
     }
     Files.createDirectories(file.getParent());
-    Files.writeString(file, GSON.toJson(new Stored(start, end, List.copyOf(cuts), List.copyOf(removed), title)), StandardCharsets.UTF_8);
+    Files.writeString(file, GSON.toJson(new Stored(start, end, List.copyOf(cuts), List.copyOf(removed), title, Map.copyOf(volumes), List.copyOf(muted))), StandardCharsets.UTF_8);
   }
 
   /** A separate copy, so a screen can tell whether anything changed. */
@@ -112,18 +123,49 @@ public final class ClipEdit {
     copy.cuts.addAll(cuts);
     copy.removed.addAll(removed);
     copy.title = title;
+    copy.volumes.putAll(volumes);
+    copy.muted.addAll(muted);
     return copy;
   }
 
   /** Whether this edit equals {@code other}. */
   public boolean sameAs(ClipEdit other) {
     return start == other.start && end == other.end && cuts.equals(other.cuts) && removed.equals(other.removed)
-        && Objects.equals(title, other.title);
+        && Objects.equals(title, other.title) && volumes.equals(other.volumes) && muted.equals(other.muted);
   }
 
   /** Whether the edit keeps the clip exactly as recorded. */
   public boolean keepsEverything() {
-    return start == 0 && end == length && cuts.isEmpty() && removed.isEmpty() && title == null;
+    return start == 0 && end == length && cuts.isEmpty() && removed.isEmpty() && title == null && keepsSound();
+  }
+
+  /** Whether every sound track keeps the volume it was saved with. */
+  public boolean keepsSound() {
+    return volumes.isEmpty() && muted.isEmpty();
+  }
+
+  /** The volume in percent of the track in {@code file}, or {@code saved} when it was never changed. */
+  public int volume(String file, int saved) {
+    return volumes.getOrDefault(file, saved);
+  }
+
+  /** Sets a track's volume, from 0 to 200 percent. */
+  public void setVolume(String file, int percent) {
+    volumes.put(file, Math.max(0, Math.min(200, percent)));
+  }
+
+  /** Whether the track in {@code file} is muted. */
+  public boolean isMuted(String file) {
+    return muted.contains(file);
+  }
+
+  /** Mutes or unmutes a track. */
+  public void setMuted(String file, boolean mute) {
+    if (mute) {
+      muted.add(file);
+      return;
+    }
+    muted.remove(file);
   }
 
   /** The title the player gave the clip for Studio, or null to use the generated one. */
