@@ -3,6 +3,7 @@ package lv.ordersmp.clips;
 import com.mojang.blaze3d.platform.InputConstants;
 import java.nio.file.Path;
 import lv.ordersmp.clips.encode.ClipWriter;
+import lv.ordersmp.clips.fight.FightTracker;
 import lv.ordersmp.clips.studio.Studio;
 import lv.ordersmp.clips.ui.ClipsScreen;
 import lv.ordersmp.clips.ui.RecordingHud;
@@ -34,10 +35,16 @@ public final class ClipsClient implements ClientModInitializer {
   private static KeyMapping saveMapping;
   private static KeyMapping recordMapping;
   private static Studio studio;
+  private static FightTracker fights;
 
   /** The running recorder, or null before the game finished starting. */
   public static Recorder recorder() {
     return recorder;
+  }
+
+  /** The fight tracker that saves kill and death clips, or null before the game finished starting. */
+  public static FightTracker fights() {
+    return fights;
   }
 
   /** The link to OrderSMP Studio and its uploads. */
@@ -82,8 +89,12 @@ public final class ClipsClient implements ClientModInitializer {
 
     HudElementRegistry.addLast(Identifier.fromNamespaceAndPath(MOD_ID, "recording"), hud);
 
+    FightTracker tracker = new FightTracker(System::nanoTime, moment -> saveMoment(created, moment));
+    tracker.configure(!ClipsConfig.AUTO_OFF.equals(config.autoClips()), ClipsConfig.AUTO_KILLS_AND_DEATHS.equals(config.autoClips()));
+
     ClientLifecycleEvents.CLIENT_STARTED.register(client -> {
       recorder = created;
+      fights = tracker;
       created.probe(gameDir.resolve(MOD_ID)).thenAccept(result -> {
         if (result.ready()) {
           return;
@@ -105,6 +116,7 @@ public final class ClipsClient implements ClientModInitializer {
     PressDetector openKey = new PressDetector(open);
     PressDetector recordKey = new PressDetector(record);
     ClientTickEvents.END_CLIENT_TICK.register(client -> {
+      tracker.tick();
       if (saveKey.pressed()) {
         created.saveClip(saved -> client.execute(() -> announce(client, saved)));
       }
@@ -163,6 +175,27 @@ public final class ClipsClient implements ClientModInitializer {
     LOG.info("Clip saved: {}", saved.file().getFileName());
     toast(client, Component.translatable("ordersmp-clips.toast.saved.title"),
         Component.translatable("ordersmp-clips.toast.saved.body", saved.seconds(), saved.file().getFileName().toString()));
+  }
+
+  /** Saves a fight the tracker found and names the clip after it, such as {@code _kill-Raven_77}. */
+  private static void saveMoment(Recorder recorder, FightTracker.Moment moment) {
+    String type = moment.kind() == FightTracker.Kind.KILL ? "kill" : "death";
+    String opponent = moment.opponent().matches("[A-Za-z0-9_]{1,16}") ? moment.opponent() : "player";
+    LOG.info("{} on record against {}, {} s", type, opponent, moment.seconds());
+    recorder.saveMoment(moment.seconds(), moment.skipSeconds(), "_" + type + "-" + opponent,
+        saved -> Minecraft.getInstance().execute(() -> announceMoment(moment, saved)));
+  }
+
+  private static void announceMoment(FightTracker.Moment moment, ClipWriter.Saved saved) {
+    Minecraft client = Minecraft.getInstance();
+    if (saved.file() == null) {
+      toast(client, Component.translatable("ordersmp-clips.toast.failed.title"), Component.literal(String.valueOf(saved.problem())));
+      return;
+    }
+    String title = moment.kind() == FightTracker.Kind.DEATH ? "ordersmp-clips.toast.death"
+        : moment.kills() > 1 ? "ordersmp-clips.toast.kills" : "ordersmp-clips.toast.kill";
+    toast(client, Component.translatable(title, moment.kills()),
+        Component.translatable("ordersmp-clips.toast.moment.body", moment.opponent(), ClipsScreen.duration(saved.seconds())));
   }
 
   /** Starts or stops Recording mode and says what happened. */

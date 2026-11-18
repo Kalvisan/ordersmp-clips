@@ -38,6 +38,8 @@ import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.util.Util;
 
 /**
@@ -62,6 +64,7 @@ public final class ClipsScreen extends Screen {
   private static final int THUMB_WIDTH = 56;
   private static final int THUMB_HEIGHT = 32;
   private static final int FOLDER_CHECK_TICKS = 20;
+  private static final Pattern MOMENT = Pattern.compile("_(kill|death)-([A-Za-z0-9_]{1,16})$");
   private static final Pattern PART = Pattern.compile("-part([0-9]+)$");
   private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm", Locale.ROOT);
   private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("d MMM", Locale.ENGLISH);
@@ -342,6 +345,10 @@ public final class ClipsScreen extends Screen {
 
   /** A clip's name for the player: when it was saved, and which part for Recording mode files. */
   static Component name(ClipLibrary.Clip clip) {
+    Matcher moment = MOMENT.matcher(ClipLibrary.stem(clip.file()));
+    if (moment.find()) {
+      return Component.translatable("ordersmp-clips.screen." + moment.group(1), moment.group(2));
+    }
     Component when = savedAt(clip);
     Matcher part = PART.matcher(ClipLibrary.stem(clip.file()));
     if (!part.find()) {
@@ -419,12 +426,18 @@ public final class ClipsScreen extends Screen {
     private final ClipLibrary.Clip clip;
     private final Component name;
     private final Component details;
+    private final ItemStack icon;
 
     private ClipEntry(ClipLibrary.Clip clip) {
       this.clip = clip;
       this.name = ClipsScreen.name(clip);
       String length = clip.seconds() < 0 ? "?" : duration((int) Math.round(clip.seconds()));
-      this.details = Component.translatable("ordersmp-clips.screen.details", length, size(clip.bytes()));
+      Matcher moment = MOMENT.matcher(ClipLibrary.stem(clip.file()));
+      boolean fight = moment.find();
+      this.icon = !fight ? ItemStack.EMPTY : new ItemStack("kill".equals(moment.group(1)) ? Items.DIAMOND_SWORD : Items.SKELETON_SKULL);
+      this.details = fight
+          ? Component.translatable("ordersmp-clips.screen.details.moment", savedAt(clip), length, size(clip.bytes()))
+          : Component.translatable("ordersmp-clips.screen.details", length, size(clip.bytes()));
     }
 
     @Override
@@ -448,6 +461,10 @@ public final class ClipsScreen extends Screen {
         graphics.blitSprite(RenderPipelines.GUI_TEXTURED, PLAY, x + (THUMB_WIDTH - 12) / 2, y + (THUMB_HEIGHT - 12) / 2, 12, 12);
       }
       int textX = x + THUMB_WIDTH + 4;
+      if (!icon.isEmpty()) {
+        graphics.item(icon, textX, getContentY() - 3);
+        textX += 18;
+      }
       graphics.text(font, name, textX, getContentY() + 1, WHITE);
       graphics.text(font, details, textX, getContentY() + 9 + 3, DARK_GRAY);
     }

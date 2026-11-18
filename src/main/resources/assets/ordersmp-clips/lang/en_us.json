@@ -99,5 +99,12 @@
   "ordersmp-clips.toast.recording.parts": "%s parts in your clips list",
   "ordersmp-clips.toast.recording.failed": "Recording did not start",
   "ordersmp-clips.toast.recording.stopped": "Recording stopped",
-  "ordersmp-clips.screen.part": "%s, part %s"
+  "ordersmp-clips.screen.part": "%s, part %s",
+  "ordersmp-clips.screen.kill": "Kill - %s",
+  "ordersmp-clips.screen.death": "Death - %s",
+  "ordersmp-clips.screen.details.moment": "%s, %s, %s",
+  "ordersmp-clips.toast.kill": "Kill on record",
+  "ordersmp-clips.toast.kills": "%s kills on record",
+  "ordersmp-clips.toast.death": "Death on record",
+  "ordersmp-clips.toast.moment.body": "%s, %s"
 }

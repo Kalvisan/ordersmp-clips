@@ -93,21 +93,20 @@ public final class PacketRing {
   }
 
   /**
-   * Writes the newest {@code frames} frames, starting at a keyframe, to {@code out} as a raw H.264
-   * stream, and returns how many frames were written.
+   * Writes up to {@code frames} frames that end {@code skipNewest} frames before the newest one,
+   * starting at the first keyframe in that range, so the written stream always decodes. Skipping
+   * the newest frames lets a clip end at a moment that is already a few seconds in the past.
    */
-  public synchronized int writeLatest(int frames, OutputStream out) throws IOException {
-    int skip = Math.max(0, entries.size() - frames);
+  public synchronized int writeLatest(int frames, int skipNewest, OutputStream out) throws IOException {
+    int end = Math.max(0, entries.size() - skipNewest);
+    int start = Math.max(0, end - frames);
     Iterator<Entry> it = entries.iterator();
-    for (int i = 0; i < skip; i++) {
-      it.next();
-    }
     WritableByteChannel channel = Channels.newChannel(out);
     int written = 0;
     boolean started = false;
-    while (it.hasNext()) {
+    for (int index = 0; index < end && it.hasNext(); index++) {
       Entry entry = it.next();
-      if (!started && !entry.keyframe()) {
+      if (index < start || (!started && !entry.keyframe())) {
         continue;
       }
       started = true;

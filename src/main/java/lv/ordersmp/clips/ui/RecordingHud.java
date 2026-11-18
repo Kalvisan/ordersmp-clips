@@ -2,20 +2,26 @@ package lv.ordersmp.clips.ui;
 
 import java.util.List;
 import java.util.Locale;
+import lv.ordersmp.clips.ClipsClient;
 import lv.ordersmp.clips.Recorder;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 
 /**
  * The small recording mark in the top-left corner, and the optional stats overlay below it. The
- * mark changes shape as well as colour (filled dot, hollow dot, square), so its state does not
- * depend on colour alone.
+ * mark changes shape as well as colour (film strip while clipping, filled dot while recording
+ * everything, hollow dot when paused), so its state does not depend on colour alone.
  */
 public final class RecordingHud implements HudElement {
+
+  private static final Identifier CLIP_ICON = Identifier.fromNamespaceAndPath(ClipsClient.MOD_ID, "hud/clip");
+  private static final int CLIP_ICON_SIZE = 9;
 
   private static final int BACKGROUND = 0x80000000;
   private static final int RED = 0xFFFF3B3B;
@@ -65,10 +71,16 @@ public final class RecordingHud implements HudElement {
       case SAVING, PROBLEM -> YELLOW;
       case PAUSED, STARTING -> GRAY;
     };
-    int width = 4 + 5 + 3 + font.width(label) + 4;
+    boolean clipping = state == Recorder.State.RECORDING && !recorder.isRecordingSession();
+    int iconWidth = clipping ? CLIP_ICON_SIZE : 5;
+    int width = 4 + iconWidth + 3 + font.width(label) + 4;
     graphics.fill(4, 4, 4 + width, 17, BACKGROUND);
-    drawDot(graphics, 8, 8, state, color);
-    graphics.text(font, label, 8 + 5 + 3, 6, state == Recorder.State.RECORDING ? WHITE : color);
+    if (clipping) {
+      graphics.blitSprite(RenderPipelines.GUI_TEXTURED, CLIP_ICON, 8, 6, CLIP_ICON_SIZE, CLIP_ICON_SIZE);
+    } else {
+      drawDot(graphics, 8, 8, state, color);
+    }
+    graphics.text(font, label, 8 + iconWidth + 3, 6, state == Recorder.State.RECORDING ? WHITE : color);
     return 17;
   }
 

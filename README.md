@@ -4,10 +4,14 @@ A lightweight Fabric mod that keeps the last minutes of your Minecraft play and 
 video with one key. Recording runs on your graphics card's built-in video encoder, so it costs
 almost nothing in FPS. It works in singleplayer and on any server.
 
-> Status: early development (0.1). The recorder and clip saving work; automatic clips on kills,
-> voice chat tracks and the in-game clip editor are on the [roadmap](#roadmap).
+> Status: early development (0.1). Recording, automatic kill clips, the editor and Studio upload
+> work; sound and voice chat tracks are on the [roadmap](#roadmap).
 
 ## Features
+
+- **Kills and deaths save themselves.** When you kill a player or die in a fight, the clip runs
+  from 5 seconds before the first hit to 4 seconds after the kill. Kills close together become one
+  clip, and the list shows them as `Kill - Name` or `Death - Name`.
 
 - **Always ready.** The last 2 minutes (adjustable) are kept in memory. Press **F8** and they are
   saved as an MP4 in your `clips` folder.
@@ -124,7 +128,7 @@ Thumbnails, timeline strips and edits are kept in hidden `.thumbnails` and `.edi
 
 | Mark | Meaning |
 |---|---|
-| Red dot, `CLIP` | Clipping; the last minutes are ready to save |
+| Film strip, `CLIP` | Clipping; the last minutes are ready to save |
 | Red dot, `REC 12:34` | Recording mode is writing everything to disk |
 | Yellow, `Saving` | A clip is being written |
 | Gray outline, `Paused` | Paused with F9 |
@@ -144,7 +148,8 @@ Settings live in `<instance>/config/ordersmp-clips.json`, created on first start
   "ffmpegPath": "",
   "showHud": true,
   "studioUrl": "https://studio.ordersmp.net",
-  "recordingPartMinutes": 10
+  "recordingPartMinutes": 10,
+  "autoClips": "kills_and_deaths"
 }
 ```
 
@@ -159,6 +164,7 @@ Settings live in `<instance>/config/ordersmp-clips.json`, created on first start
 | `showHud` | Show the recording mark |
 | `studioUrl` | The OrderSMP Studio that **Upload to Studio** sends clips to |
 | `recordingPartMinutes` | Length of each file Recording mode writes (1 to 60 minutes) |
+| `autoClips` | Automatic clips: `kills_and_deaths`, `kills` or `off` |
 
 Memory use is roughly bitrate times buffer length: 2 minutes at 10 Mbps is about 150 MB.
 
@@ -182,7 +188,7 @@ Memory use is roughly bitrate times buffer length: 2 minutes at 10 Mbps is about
 
 ## Roadmap
 
-- Automatic clips on kills and deaths, trimmed from the first hit
+- Exact fight starts and kills from the OrderSMP server, instead of what the client sees
 - Simple Voice Chat voices as separate tracks with a volume per player
 - Sound in the editor: game sound and voice volumes per player
 - Builds for each new Minecraft release

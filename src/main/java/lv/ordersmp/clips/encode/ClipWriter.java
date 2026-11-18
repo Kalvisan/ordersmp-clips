@@ -30,20 +30,23 @@ public final class ClipWriter {
    */
   public record Saved(Path file, int seconds, String problem) {}
 
-  /** Writes up to {@code seconds} of the newest video to a new MP4 in {@code folder}. */
-  public static Saved save(PacketRing ring, String ffmpeg, int fps, int seconds, Path folder) {
+  /**
+   * Writes up to {@code seconds} of video ending {@code skipSeconds} before the newest frame to a
+   * new MP4 in {@code folder}, named by the time plus {@code suffix} (such as {@code _kill-Name}).
+   */
+  public static Saved save(PacketRing ring, String ffmpeg, int fps, int seconds, int skipSeconds, Path folder, String suffix) {
     Path raw = null;
     try {
       Files.createDirectories(folder);
       raw = Files.createTempFile(folder, ".clip-", ".h264");
       int frames;
       try (OutputStream out = new BufferedOutputStream(Files.newOutputStream(raw), 1 << 20)) {
-        frames = ring.writeLatest(fps * seconds, out);
+        frames = ring.writeLatest(fps * seconds, fps * skipSeconds, out);
       }
       if (frames < fps) {
         return new Saved(null, 0, "nothing recorded yet");
       }
-      Path target = folder.resolve(NAME.format(LocalDateTime.now()) + ".mp4");
+      Path target = folder.resolve(NAME.format(LocalDateTime.now()) + suffix + ".mp4");
       String problem = remux(ffmpeg, raw, fps, target);
       if (problem != null) {
         return new Saved(null, 0, problem);

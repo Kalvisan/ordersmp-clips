@@ -149,22 +149,36 @@ public final class Recorder {
     measure(start);
   }
 
-  /** Saves the buffer as a clip in the background and reports the result to {@code done}. */
+  /** Saves the whole buffer as a clip in the background and reports the result to {@code done}. */
   public void saveClip(Consumer<ClipWriter.Saved> done) {
-    EncoderProbe.Result ready = probe;
-    if (ready == null || !ready.ready()) {
-      done.accept(new ClipWriter.Saved(null, 0, problem == null ? "recording has not started yet" : problem));
-      return;
-    }
     long now = System.nanoTime();
     if (state == State.SAVING || now - lastSaveNanos < SAVE_COOLDOWN_NANOS) {
       return;
     }
     lastSaveNanos = now;
-    State before = state;
+    save(config.bufferSeconds(), 0, "", done);
+  }
+
+  /**
+   * Saves an automatic clip: {@code seconds} of play ending {@code skipSeconds} ago, named with
+   * {@code suffix}. Unlike the save key it has no cooldown, since the fight rules already space
+   * clips apart. Longer requests are cut to what the buffer holds.
+   */
+  public void saveMoment(int seconds, int skipSeconds, String suffix, Consumer<ClipWriter.Saved> done) {
+    int skip = Math.max(0, Math.min(skipSeconds, config.bufferSeconds() - 1));
+    save(Math.min(seconds, config.bufferSeconds() - skip), skip, suffix, done);
+  }
+
+  private void save(int seconds, int skipSeconds, String suffix, Consumer<ClipWriter.Saved> done) {
+    EncoderProbe.Result ready = probe;
+    if (ready == null || !ready.ready()) {
+      done.accept(new ClipWriter.Saved(null, 0, problem == null ? "recording has not started yet" : problem));
+      return;
+    }
+    State before = state == State.SAVING ? State.RECORDING : state;
     state = State.SAVING;
     saver.execute(() -> {
-      ClipWriter.Saved saved = ClipWriter.save(ring, ready.ffmpeg(), config.fps(), config.bufferSeconds(), clipsFolder);
+      ClipWriter.Saved saved = ClipWriter.save(ring, ready.ffmpeg(), config.fps(), seconds, skipSeconds, clipsFolder, suffix);
       if (saved.file() != null) {
         ClipLibrary.thumbnail(saved.file(), ready.ffmpeg());
       }
