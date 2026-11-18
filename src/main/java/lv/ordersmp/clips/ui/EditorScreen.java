@@ -126,6 +126,9 @@ public final class EditorScreen extends Screen {
 
   @Override
   protected void init() {
+    if (tabs != null && tabManager.getCurrentTab() != null) {
+      tabIndex = Math.max(0, tabs.getTabs().indexOf(tabManager.getCurrentTab()));
+    }
     if (preview == null) {
       preview = new VideoPreview(recorder.ffmpeg(), clip.file());
       pendingSeek = playhead;
@@ -175,7 +178,7 @@ public final class EditorScreen extends Screen {
 
     int tabWidth = rightWidth / 3;
     GridLayoutTab trim = trimTab(Math.min(rightWidth, 200));
-    GridLayoutTab audio = audioTab(rightWidth);
+    GridLayoutTab audio = audioTab(Math.min(rightWidth - 8, 260));
     GridLayoutTab send = sendTab(Math.min(rightWidth, 200));
     tabs = addRenderableWidget(TabNavigationBar.builder(tabManager, rightX, TOP, rightWidth, 24)
         .addTab(new MenuTabBar.MenuTabButton(tabManager, trim, tabWidth, 24), trim)
@@ -300,17 +303,17 @@ public final class EditorScreen extends Screen {
    */
   private GridLayoutTab audioTab(int controlWidth) {
     EditorTab tab = new EditorTab(withIcon(SPEAKER, "ordersmp-clips.editor.tab.audio"));
-    GridLayout.RowHelper rows = tab.rows(2);
+    GridLayout.RowHelper rows = tab.rows(1);
     List<AudioTracks.Track> tracks = AudioTracks.load(clip.file());
     if (tracks.isEmpty()) {
-      rows.addChild(new MultiLineTextWidget(Component.translatable("ordersmp-clips.editor.audio.none"), font).setMaxWidth(controlWidth), 2);
+      rows.addChild(new MultiLineTextWidget(Component.translatable("ordersmp-clips.editor.audio.none"), font).setMaxWidth(controlWidth));
       return tab;
     }
     int shown = 0;
     for (AudioTracks.Track track : tracks) {
       if (shown++ == MAX_TRACK_ROWS) {
         rows.addChild(new MultiLineTextWidget(Component.translatable("ordersmp-clips.editor.audio.more", tracks.size() - MAX_TRACK_ROWS), font)
-            .setMaxWidth(controlWidth), 2);
+            .setMaxWidth(controlWidth));
         break;
       }
       int saved = ClipsClient.settings().defaultVolume(track.kind());
@@ -324,14 +327,15 @@ public final class EditorScreen extends Screen {
             edit.setVolume(track.file(), percent);
             refreshControls();
           });
-      rows.addChild(slider);
-      rows.addChild(iconOnly(edit.isMuted(track.file()) ? "ordersmp-clips.editor.audio.unmute" : "ordersmp-clips.editor.audio.mute",
+      LinearLayout row = rows.addChild(LinearLayout.horizontal().spacing(4));
+      row.addChild(slider);
+      row.addChild(iconOnly(edit.isMuted(track.file()) ? "ordersmp-clips.editor.audio.unmute" : "ordersmp-clips.editor.audio.mute",
           edit.isMuted(track.file()) ? MUTED : SPEAKER, button -> {
             edit.setMuted(track.file(), !edit.isMuted(track.file()));
             rebuildWidgets();
           }));
     }
-    rows.addChild(new MultiLineTextWidget(Component.translatable("ordersmp-clips.editor.audio.note"), font).setMaxWidth(controlWidth), 2);
+    rows.addChild(new MultiLineTextWidget(Component.translatable("ordersmp-clips.editor.audio.note"), font).setMaxWidth(controlWidth));
     return tab;
   }
 
