@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "ordersmp-clips",
+  "version": "${version}",
+  "name": "OrderSMP Clips",
+  "description": "Keeps the last minutes of play and saves clips with one key, using your graphics card's video encoder.",
+  "authors": ["OrderSMP"],
+  "contact": {
+    "homepage": "https://github.com/Kalvisan/ordersmp-clips",
+    "sources": "https://github.com/Kalvisan/ordersmp-clips",
+    "issues": "https://github.com/Kalvisan/ordersmp-clips/issues"
+  },
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["lv.ordersmp.clips.ClipsClient"]
+  },
+  "mixins": ["ordersmp-clips.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.20.1",
+    "minecraft": "~26.3",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}

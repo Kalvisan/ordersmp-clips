@@ -1,0 +1,20 @@
+{
+  "key.category.ordersmp-clips.clips": "OrderSMP Clips",
+  "key.ordersmp-clips.save": "Save Clip Now",
+  "key.ordersmp-clips.toggle": "Pause Recording",
+  "key.ordersmp-clips.stats": "Show Recording Stats",
+  "ordersmp-clips.hud.rec": "REC",
+  "ordersmp-clips.hud.paused": "Paused",
+  "ordersmp-clips.hud.saving": "Saving",
+  "ordersmp-clips.hud.starting": "Starting",
+  "ordersmp-clips.hud.problem": "Clips off",
+  "ordersmp-clips.toast.saved.title": "Clip saved",
+  "ordersmp-clips.toast.saved.body": "%s seconds in %s",
+  "ordersmp-clips.toast.failed.title": "Clip not saved",
+  "ordersmp-clips.toast.empty": "Nothing recorded yet. Play a few seconds first.",
+  "ordersmp-clips.toast.ffmpeg.title": "Clips needs FFmpeg",
+  "ordersmp-clips.toast.ffmpeg.body": "Install FFmpeg, then restart. See the Clips README.",
+  "ordersmp-clips.toast.encoder.title": "Clips cannot record",
+  "ordersmp-clips.toast.paused": "Recording paused",
+  "ordersmp-clips.toast.resumed": "Recording again"
+}
