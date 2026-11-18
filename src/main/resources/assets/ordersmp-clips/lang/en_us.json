@@ -133,7 +133,7 @@
   "ordersmp-clips.options.long.tooltip": "Save a fight of 20 seconds or more that ended without a kill.",
   "ordersmp-clips.options.storage": "Storage",
   "ordersmp-clips.options.mark": "Recording Mark",
-  "ordersmp-clips.options.mark.tooltip": "The mark in the top left corner: a red dot while clips are ready, the fight while one is on, LIVE in Recording mode. Minimal shows only the icon. It never shows in your clips.",
+  "ordersmp-clips.options.mark.tooltip": "The mark in the top left corner: REC while clips are ready, the fight while one is on, LIVE in Recording mode. Minimal shows only the icon. It never shows in your clips.",
   "ordersmp-clips.options.quick.subtitle": "Quick setup. Everything else is under Advanced.",
   "ordersmp-clips.options.quality": "Quality",
   "ordersmp-clips.options.quality.tooltip": "Higher quality uses more memory and disk.",
@@ -253,5 +253,6 @@
   "ordersmp-clips.options.status.title": "Clips Status",
   "ordersmp-clips.options.status.ok": "Recording works",
   "ordersmp-clips.options.status.no_ffmpeg": "ffmpeg was not found, so nothing can be recorded",
-  "ordersmp-clips.options.status.body": "%s\n\nEncoder: %s\nVideo: %sx%s at %s FPS\nReady to save: %s, %s MB"
+  "ordersmp-clips.options.status.body": "%s\n\nEncoder: %s\nVideo: %sx%s at %s FPS\nReady to save: %s, %s MB",
+  "ordersmp-clips.hud.clip": "REC"
 }

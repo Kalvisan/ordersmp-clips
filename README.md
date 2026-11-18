@@ -22,8 +22,8 @@ almost nothing in FPS. It works in singleplayer and on any server.
   Nothing is written to disk until you save.
 - **Built for your mods.** Uses only Minecraft's own rendering API instead of raw OpenGL, so it
   is designed to keep working with Sodium, Iris and the Vulkan renderer (being tested, see below).
-- **Clear status.** A small mark in the corner shows whether clips are ready, a fight is on,
-  Recording mode is `LIVE`, or something needs attention. An optional overlay shows exactly what recording costs.
+- **Clear status.** A small mark in the corner shows `REC` while clips are ready, the fight while
+  one is on, `LIVE` in Recording mode, or that something needs attention. An optional overlay shows exactly what recording costs.
 - **Any server.** Clips stay on your PC. Nothing leaves it unless you press **Upload to Studio**.
 - **Only while you play.** Nothing is recorded on the title screen or while loading.
 
@@ -55,7 +55,7 @@ back to a software encoder, which uses more CPU.
 
    You can also place `ffmpeg` (or `ffmpeg.exe`) in `<instance>/ordersmp-clips/`, or set its path
    in the config file.
-4. Start the game. A red dot appears in the corner once recording runs.
+4. Start the game. A red dot and `REC` appear in the corner once recording runs.
 
 ## Usage
 
@@ -162,12 +162,12 @@ The mark is drawn after each frame is captured, so you see it but your clips nev
 
 | Mark | Meaning |
 |---|---|
-| Red dot | Clipping; the last minutes are ready to save |
+| Round red dot, `REC` | Clipping; the last minutes are ready to save |
 | Crossed swords, `Fight 0:12` | A fight is being followed for an automatic clip |
 | Sword, `Kill x1` | A kill happened; the clip saves when the fighting stops |
-| Red dot, `LIVE 12:34` | Recording mode is writing everything to disk |
+| Round red dot, `LIVE 12:34` | Recording mode is writing everything to disk |
 | Yellow, `Saving` | A clip is being written |
-| Gray outline, `Paused` | Paused with F9 |
+| Gray ring, `Paused` | Paused with F9 |
 | Yellow, `Clips off` | Something is missing; a message explains what |
 
 ### Sound
@@ -276,6 +276,10 @@ cd ordersmp-clips
 
 The mod jar is written to `build/libs/`. `./gradlew runClient` starts a development client.
 The build needs JDK 25 and treats every compiler warning as an error.
+
+Pushing a tag such as `v0.2.0` builds the jar and publishes it on the
+[Releases](https://github.com/Kalvisan/ordersmp-clips/releases) page. A tag with a dash, such as
+`v0.2.0-alpha.1`, is published as a pre-release.
 
 ## Contributing
 
