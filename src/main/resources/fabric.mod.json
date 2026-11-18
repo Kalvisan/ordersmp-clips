@@ -3,7 +3,7 @@
   "id": "ordersmp-clips",
   "version": "${version}",
   "name": "OrderSMP Clips",
-  "description": "Keeps the last minutes of play and saves clips with one key, using your graphics card's video encoder.",
+  "description": "Saves your best moments. Keeps the last minutes ready, clips fights by itself, and lets you trim and share them.",
   "authors": [
     "OrderSMP"
   ],
